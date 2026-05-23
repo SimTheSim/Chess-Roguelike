@@ -1,0 +1,4 @@
+{
+  "build": { "buildCommand": "echo skip" },
+  "deploy": { "startCommand": "node server.js" }
+}
