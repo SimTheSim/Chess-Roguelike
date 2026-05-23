@@ -1,0 +1,6 @@
+{
+  "name": "Chess Roguelike",
+  "description": "A minimalist Chess game featuring roguelike progression and modular modifier upgrades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
