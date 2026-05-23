@@ -601,7 +601,7 @@ export default function App() {
                           : 'bg-black border-zinc-800 text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
-                      🌐 ONLINE PvP
+                    ONLINE PvP
                     </button>
                   </div>
                 </div>
@@ -692,7 +692,7 @@ export default function App() {
                 `}
                 id="start-campaign-btn"
               >
-                {gameMode === 'online' ? '🌐 FIND OPPONENT' : 'ENTER ARENA'}
+                {gameMode === 'online' ? 'FIND OPPONENT' : 'ENTER ARENA'}
               </button>
             </motion.div>
           )}

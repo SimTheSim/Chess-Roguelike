@@ -2,10 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion, AnimatePresence } from 'motion/react';
 
-// ─── Config ───────────────────────────────────────────────────────────────────
 const SERVER_URL = import.meta.env.VITE_MULTIPLAYER_SERVER ?? 'http://localhost:3001';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 export interface ReadyPayload {
   socket: Socket;
   color: 'white' | 'black';
@@ -21,7 +19,6 @@ interface MultiplayerLobbyProps {
 
 type LobbyView = 'menu' | 'create' | 'join' | 'waiting';
 
-// ─── Component ────────────────────────────────────────────────────────────────
 export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
   const [view, setView] = useState<LobbyView>('menu');
   const [playerName, setPlayerName] = useState('');
@@ -52,7 +49,6 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     return socketRef.current;
   }, []);
 
-  // ── Create room ──────────────────────────────────────────────────────────────
   const handleCreate = () => {
     if (!playerName.trim()) { setError('Enter your name first.'); return; }
     setError('');
@@ -66,7 +62,8 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
       setMyColor('white');
       setView('waiting');
 
-      socket.on('opponent_joined', ({ playerName: name }) => {        setOpponentName(name);
+      socket.on('opponent_joined', ({ playerName: name }) => {
+        setOpponentName(name);
         setTimeout(() => {
           handedOffRef.current = true;
           onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, matchTarget });
@@ -75,7 +72,6 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     });
   };
 
-  // ── Join room ────────────────────────────────────────────────────────────────
   const handleJoin = () => {
     if (!playerName.trim()) { setError('Enter your name first.'); return; }
     if (!joinCode.trim()) { setError('Enter a room code.'); return; }
@@ -117,10 +113,17 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     }
   };
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
+  const navigateTo = (dest: 'create' | 'join') => {
+    if (!playerName.trim()) {
+      setError('Enter your name before continuing.');
+      return;
+    }
+    setError('');
+    setView(dest);
+  };
+
   return (
     <div className="min-h-screen bg-black flex items-center justify-center p-4 font-pixel">
-      {/* Scanline overlay */}
       <div
         className="pointer-events-none fixed inset-0 z-50 opacity-[0.03]"
         style={{
@@ -128,8 +131,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         }}
       />
 
-      <AnimatePresence mode = "wait">
-        {/* ── MENU ── */}
+      <AnimatePresence mode="wait">
         {view === 'menu' && (
           <motion.div
             key="menu"
@@ -139,7 +141,6 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
             className="w-full max-w-sm"
           >
             <div className="border-4 border-emerald-400 bg-zinc-950 p-8 shadow-[8px_8px_0px_#10b981]">
-              {/* Title */}
               <div className="text-center mb-8">
                 <div className="inline-block border-2 border-yellow-400 px-3 py-1 mb-3">
                   <span className="text-yellow-400 text-[9px] uppercase tracking-widest">Online</span>
@@ -152,7 +153,6 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 </div>
               </div>
 
-              {/* Name input */}
               <div className="mb-6">
                 <label className="block text-zinc-500 text-[7px] uppercase tracking-wider mb-2">
                   Your Name
@@ -161,8 +161,8 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                   type="text"
                   maxLength={18}
                   value={playerName}
-                  onChange={e => setPlayerName(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && playerName && setView('create')}
+                  onChange={e => { setPlayerName(e.target.value); setError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && navigateTo('create')}
                   placeholder="Enter callsign..."
                   className="w-full bg-black border-2 border-zinc-700 focus:border-emerald-400 outline-none text-white text-[9px] px-3 py-2.5 placeholder-zinc-700 transition-colors uppercase tracking-wide"
                 />
@@ -172,19 +172,18 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 <p className="text-rose-400 text-[7px] uppercase mb-4 text-center">{error}</p>
               )}
 
-              {/* Actions */}
               <div className="flex flex-col gap-3">
                 <button
-                  onClick={() => { setError(''); setView('create'); }}
+                  onClick={() => navigateTo('create')}
                   className="border-4 border-emerald-400 bg-black hover:bg-emerald-950 text-emerald-400 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#10b981] hover:shadow-[2px_2px_0px_#10b981] hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-pointer"
                 >
-                  ⚔ Create Room
+                  Create Room
                 </button>
                 <button
-                  onClick={() => { setError(''); setView('join'); }}
+                  onClick={() => navigateTo('join')}
                   className="border-4 border-zinc-600 bg-black hover:bg-zinc-900 text-zinc-300 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#52525b] hover:shadow-[2px_2px_0px_#52525b] hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-pointer"
                 >
-                  🔑 Join by Code
+                  Join by Code
                 </button>
               </div>
 
@@ -192,13 +191,12 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 onClick={onBack}
                 className="mt-6 w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
               >
-                ← Back to Menu
+                Back to Menu
               </button>
             </div>
           </motion.div>
         )}
 
-        {/* ── CREATE ── */}
         {view === 'create' && (
           <motion.div
             key="create"
@@ -246,20 +244,19 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 disabled={connecting}
                 className="w-full border-4 border-emerald-400 bg-black hover:bg-emerald-950 text-emerald-400 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#10b981] disabled:opacity-50 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
-                {connecting ? 'Connecting...' : '⚡ Generate Room Code'}
+                {connecting ? 'Connecting...' : 'Generate Room Code'}
               </button>
 
               <button
                 onClick={() => { setError(''); setView('menu'); }}
                 className="mt-4 w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
               >
-                ← Back
+                Back
               </button>
             </div>
           </motion.div>
         )}
 
-        {/* ── JOIN ── */}
         {view === 'join' && (
           <motion.div
             key="join"
@@ -300,20 +297,19 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 disabled={connecting || joinCode.length < 4}
                 className="w-full border-4 border-zinc-500 bg-black hover:bg-zinc-900 text-zinc-200 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#52525b] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer"
               >
-                {connecting ? 'Joining...' : '→ Enter Room'}
+                {connecting ? 'Joining...' : 'Enter Room'}
               </button>
 
               <button
                 onClick={() => { setError(''); setView('menu'); }}
                 className="mt-4 w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
               >
-                ← Back
+                Back
               </button>
             </div>
           </motion.div>
         )}
 
-        {/* ── WAITING ── */}
         {view === 'waiting' && (
           <motion.div
             key="waiting"
@@ -323,15 +319,21 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
             className="w-full max-w-sm text-center"
           >
             <div className="border-4 border-emerald-400 bg-zinc-950 p-8 shadow-[8px_8px_0px_#10b981]">
-              {/* Animated pulse ring */}
               <div className="relative inline-flex items-center justify-center mb-6">
                 <motion.div
                   animate={{ scale: [1, 1.4, 1], opacity: [0.6, 0, 0.6] }}
                   transition={{ repeat: Infinity, duration: 1.8 }}
                   className="absolute w-16 h-16 border-2 border-emerald-400 rounded-full"
                 />
-                <div className="w-12 h-12 border-4 border-emerald-400 bg-black flex items-center justify-center text-lg">
-                  ♟
+                <div className="w-12 h-12 border-4 border-emerald-400 bg-black flex items-center justify-center">
+                  <svg
+                    viewBox="0 0 45 45"
+                    className="w-7 h-7 text-emerald-400"
+                    xmlns="http://www.w3.org/2000/svg"
+                    dangerouslySetInnerHTML={{
+                      __html: `<path fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/>`
+                    }}
+                  />
                 </div>
               </div>
 
@@ -345,7 +347,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-emerald-400 text-[8px] uppercase mb-4"
                 >
-                  ✓ {opponentName} has joined!
+                  {opponentName} has joined!
                 </motion.p>
               ) : (
                 <p className="text-zinc-500 text-[7px] uppercase mb-4">
@@ -353,7 +355,6 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 </p>
               )}
 
-              {/* Room code display */}
               <div
                 onClick={copyCode}
                 className="my-6 border-2 border-dashed border-zinc-600 hover:border-emerald-400 bg-black cursor-pointer py-4 px-6 transition-colors group"
@@ -400,7 +401,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 }}
                 className="mt-8 w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
               >
-                ✕ Cancel
+                Cancel
               </button>
             </div>
           </motion.div>
@@ -431,7 +432,6 @@ export function useMultiplayerSync({ socket, roomCode, myColor, onRemoteState })
 
   const syncState = useCallback(
     (state: any) => {
-      console.log('[SYNC] socket is:', socket, 'ref is:', socketRef.current);
       socketRef.current?.emit('game_state', { code: roomCodeRef.current, state });
     },
     []
