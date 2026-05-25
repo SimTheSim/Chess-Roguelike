@@ -164,9 +164,13 @@ export function getValidMoves(
 
         const startRow = isWhite ? 6 : 1;
         const doubleR = pos.r + 2 * dir;
-        const canDouble = pos.r === startRow || upgrades.includes('pawn-double');
+        const tripleR = pos.r + 3 * dir;
+        const canDouble = pos.r === startRow || upgrades.includes('pawn-double') || upgrades.includes('pawn-triple');
         if (canDouble && doubleR >= 0 && doubleR < 8 && !board[doubleR][pos.c]) {
           moves.push({ r: doubleR, c: pos.c });
+          if (upgrades.includes('pawn-triple') && tripleR >= 0 && tripleR < 8 && !board[tripleR][pos.c]) {
+            moves.push({ r: tripleR, c: pos.c });
+          }
         }
       }
 
@@ -192,6 +196,11 @@ export function getValidMoves(
           if (col >= 0 && col < 8 && !board[nextR][col]) {
             moves.push({ r: nextR, c: col });
           }
+        }
+      }
+      if (upgrades.includes('pawn-capture-forward')) {
+        if (nextR >= 0 && nextR < 8 && board[nextR][pos.c] && board[nextR][pos.c]!.color !== p.color) {
+          moves.push({ r: nextR, c: pos.c });
         }
       }
       if (upgrades.includes('pawn-backstep')) {
@@ -260,6 +269,15 @@ export function getValidMoves(
         }
       }
     }
+    if (upgrades.includes('knight-wide')) {
+      const wideMoves = [
+        [-3, -1], [-3, 1], [3, -1], [3, 1],
+        [-1, -3], [-1, 3], [1, -3], [1, 3],
+      ];
+      for (const [dr, dc] of wideMoves) {
+        addIfOnBoard(pos.r + dr, pos.c + dc);
+      }
+    }
   } else if (p.type === 'bishop') {
     const dirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
     const canHop = upgrades.includes('bishop-hop');
@@ -271,6 +289,12 @@ export function getValidMoves(
       const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
       for (const [dr, dc] of orthoDirs) {
         addLine(dr, dc, 1);
+      }
+    }
+    if (upgrades.includes('bishop-extended')) {
+      const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dr, dc] of orthoDirs) {
+        addLine(dr, dc, 3);
       }
     }
   } else if (p.type === 'rook') {
@@ -285,19 +309,17 @@ export function getValidMoves(
         addLine(dr, dc, 1);
       }
     }
-  } else if (p.type === 'queen') {
-    const dirs = [
-      [-1, -1], [-1, 1], [1, -1], [1, 1],
-      [-1, 0], [1, 0], [0, -1], [0, 1]
-    ];
-    for (const [dr, dc] of dirs) {
-      addLine(dr, dc);
-    }
-    if (upgrades.includes('queen-hop')) {
-      const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      for (const [dr, dc] of orthoDirs) {
-        addLine(dr, dc, 8, true);
+    if (upgrades.includes('rook-diagonal-full')) {
+      const diagDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
+      for (const [dr, dc] of diagDirs) {
+        addLine(dr, dc, 3);
       }
+    }
+  } else if (p.type === 'queen') {
+    const queenCanPassFriendly = upgrades.includes('queen-ghost');
+    const queenDirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]];
+    for (const [dr, dc] of queenDirs) {
+      addLine(dr, dc, 8, upgrades.includes('queen-hop') && (dr === 0 || dc === 0), queenCanPassFriendly);
     }
   } else if (p.type === 'king') {
     const dirs = [
@@ -488,14 +510,12 @@ export function executeMove(
     nextEnPassantTarget = { r: (from.r + to.r) / 2, c: from.c };
   }
 
-  // Track standard move hasMoved flags
   p.hasMoved = true;
   nextBoard[to.r][to.c] = p;
   nextBoard[from.r][from.c] = null;
 
   if (isCastling) {
     const r = from.r;
-    // Kingside castling
     if (to.c === 6) {
       const rook = nextBoard[r][7];
       if (rook) {
@@ -504,7 +524,6 @@ export function executeMove(
         nextBoard[r][7] = null;
       }
 
-      // Handle Castling Boons
       if (upgrades.includes('castling-extra-rook')) {
         nextBoard[r][7] = {
           id: `${p.color}_castle_rook_${Date.now()}`,
@@ -543,7 +562,6 @@ export function executeMove(
         });
       }
     }
-    // Queenside castling
     else if (to.c === 2) {
       const rook = nextBoard[r][0];
       if (rook) {
@@ -552,7 +570,6 @@ export function executeMove(
         nextBoard[r][0] = null;
       }
 
-      // Handle Castling Boons
       if (upgrades.includes('castling-extra-rook')) {
         nextBoard[r][0] = {
           id: `${p.color}_castle_rook_${Date.now()}`,
@@ -593,7 +610,6 @@ export function executeMove(
     }
   }
 
-  // Handle Promotion
   const canPromote = (p.type === 'pawn') && (
     (p.color === 'white' && to.r === 0) ||
     (p.color === 'black' && to.r === 7) ||
@@ -608,7 +624,6 @@ export function executeMove(
     };
   }
 
-  // Handle explosive Martyrdom
   if (captured && upgrades.includes('martyrdom')) {
     nextBoard[to.r][to.c] = null;
     exploded.push(to);
@@ -631,10 +646,25 @@ export function executeMove(
     }
   }
 
+  if (captured && p.type === 'queen' && upgrades.includes('queen-extra-capture')) {
+    const adjDirs = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+    for (const [dr, dc] of adjDirs) {
+      const ar = to.r + dr;
+      const ac = to.c + dc;
+      if (ar >= 0 && ar < 8 && ac >= 0 && ac < 8) {
+        const adj = nextBoard[ar][ac];
+        if (adj && adj.color !== p.color && adj.type !== 'king') {
+          nextBoard[ar][ac] = null;
+          exploded.push({ r: ar, c: ac });
+          break;
+        }
+      }
+    }
+  }
+
   return { nextBoard, captured, exploded, nextEnPassantTarget };
 }
 
-// Locate the king and check if they can be captured right away on the opposing turn
 export function isKingThreatened(
   board: Board,
   color: PieceColor,
@@ -653,9 +683,8 @@ export function isKingThreatened(
     if (kingPos) break;
   }
 
-  if (!kingPos) return true; // King is captured!
+  if (!kingPos) return true;
 
-  // Check if any opposing piece has a valid move taking the king
   const oppColor = color === 'white' ? 'black' : 'white';
   for (let r = 0; r < 8; r++) {
     for (let c = 0; c < 8; c++) {
@@ -671,7 +700,6 @@ export function isKingThreatened(
   return false;
 }
 
-// Evaluating relative benefit of AI moves (Black wants high scores, White wants low scores)
 export function evaluateBoard(board: Board, playerUpgrades: string[], opponentUpgrades: string[]): number {
   let score = 0;
   let whiteKingPresent = false;
@@ -723,8 +751,6 @@ export function evaluateBoard(board: Board, playerUpgrades: string[], opponentUp
   if (!whiteKingPresent) return 999999;
   if (!blackKingPresent) return -999999;
 
-  // Strategic check/threat lookup prevention:
-  // If AI King is threatened, apply severe penalty. Conversely, if Player King is threatened, award massive bonus.
   if (isKingThreatened(board, 'black', playerUpgrades, opponentUpgrades)) {
     score -= 8000;
   }
@@ -856,7 +882,6 @@ export function getAIMove(
   const rootMoves = getAllPossibleMovesForAI(board, 'black', playerUpgrades, opponentUpgrades);
   if (rootMoves.length === 0) return null;
 
-  // Lvl 5 AI gets optimal depth 3 lookup + full defense evaluation to protect against wandering queen checkmates
   let depth = 2;
   if (difficulty === 1) depth = 1;
   else if (difficulty === 2) depth = 1;

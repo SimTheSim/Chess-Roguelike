@@ -9,6 +9,7 @@ export interface ReadyPayload {
   color: 'white' | 'black';
   roomCode: string;
   opponentName: string;
+  playerName: string;
   matchTarget: number;
 }
 
@@ -66,7 +67,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         setOpponentName(name);
         setTimeout(() => {
           handedOffRef.current = true;
-          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, matchTarget });
+          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, playerName: playerName.trim(), matchTarget });
         }, 800);
       });
     });

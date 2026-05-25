@@ -28,6 +28,7 @@ export interface Upgrade {
   description: string;
   rarity: 'common' | 'rare' | 'epic';
   icon: string;
+  pieceFamily: 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king' | 'general';
 }
 
 export interface GameState {

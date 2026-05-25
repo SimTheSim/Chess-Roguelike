@@ -10,10 +10,9 @@
 
 
 TODO
-Bug where the reward screen is triggered twice
-Bug where the opponent continues playing after capturing the king
-Add en passant
-Fix rewards related to "staging" extra-knight and extra-rook
+Switch sides every game
+Add another game mode, where instead of only the loser picking, the loser picks first, and the winner picks within the remaining two options
+Add more artefacts
+Art for fallback svgs
 
-NEXT:
-Netplay
+Change the artifact pick, where the loser picks first, and then winner picks between one of the other options

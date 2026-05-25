@@ -17,28 +17,26 @@ import { MultiplayerLobby, useMultiplayerSync } from './components/MultiplayerLo
 import type { Socket } from 'socket.io-client';
 
 export default function App() {
-  // Campaign & Match configurations
   const [level, setLevel] = useState<number>(1);
   const [matchTarget, setMatchTarget] = useState<number>(5);
   const [gameMode, setGameMode] = useState<'campaign' | 'pvp' | 'online'>('campaign');
 
-  // Multiplayer (online) state
   const [mpSocket, setMpSocket] = useState<Socket | null>(null);
   const [mpColor, setMpColor] = useState<'white' | 'black'>('white');
   const [mpRoomCode, setMpRoomCode] = useState('');
   const [mpOppName, setMpOppName] = useState('');
   const [showLobby, setShowLobby] = useState(false);
+  const [mpPlayerName, setMpPlayerName] = useState('');
   const [theme, setTheme] = useState<'classic' | 'retro-green' | 'retro-cyber'>('classic');
   const [aiDifficulty, setAiDifficulty] = useState<number>(3);
 
-  // Match / Round states
   const [playerScore, setPlayerScore] = useState<number>(0);
   const [opponentScore, setOpponentScore] = useState<number>(0);
-  const [upgrades, setUpgrades] = useState<string[]>([]); // Player 1 (White) boons
-  const [opponentUpgrades, setOpponentUpgrades] = useState<string[]>([]); // Player 2 (Black / AI) boons
+  const [upgrades, setUpgrades] = useState<string[]>([]);
+  const [opponentUpgrades, setOpponentUpgrades] = useState<string[]>([]);
   const [roundCounter, setRoundCounter] = useState<number>(1);
+  const [roundStartColor, setRoundStartColor] = useState<'white' | 'black'>('white');
 
-  // Play Board States
   const [board, setBoard] = useState<Board>(() => createInitialBoard(1, [], []));
   const [turn, setTurn] = useState<'white' | 'black'>('white');
   const [selectedPos, setSelectedPos] = useState<Position | null>(null);
@@ -52,7 +50,7 @@ export default function App() {
   const [crumblingColor, setCrumblingColor] = useState<'white' | 'black' | null>(null);
 
   const [status, setStatus] = useState<
-  'start' | 'playing' | 'round-end-notifying' | 'upgrading-white' | 'upgrading-black' | 'match-won' | 'match-lost' | 'waiting-for-opponent-upgrade'
+    'start' | 'playing' | 'round-end-notifying' | 'upgrading-white' | 'upgrading-black' | 'match-won' | 'match-lost' | 'waiting-for-opponent-upgrade'
   >('start');
 
   const roundEndingRef = useRef(false);
@@ -68,17 +66,13 @@ export default function App() {
 
   const handleRemoteState = useCallback((state: any) => {
     if (!state) return;
-    
-    const data = state.state ? state.state : state;
 
-    console.log("[CLIENT] Received remote move state successfully:", data);
+    const data = state.state ? state.state : state;
 
     setBoard(data.board);
     setTurn(data.turn);
-    
     setUpgrades(data.upgrades);
     setOpponentUpgrades(data.opponentUpgrades);
-    
     setEnPassantTarget(data.enPassantTarget);
     setCapturedByWhite(data.capturedByWhite);
     setCapturedByBlack(data.capturedByBlack);
@@ -86,6 +80,10 @@ export default function App() {
     setPlayerScore(data.playerScore);
     setOpponentScore(data.opponentScore);
     setRoundCounter(data.roundCounter);
+
+    if (data.roundStartColor) {
+      setRoundStartColor(data.roundStartColor);
+    }
 
     if (data.roundOver) {
       const loserColor = data.roundOver === 'white' ? 'black' : 'white';
@@ -96,7 +94,7 @@ export default function App() {
       }, 1500);
       return;
     }
-    
+
     if (data.status) {
       if (data.status === 'playing') {
         roundEndingRef.current = false;
@@ -105,41 +103,25 @@ export default function App() {
       }
       setStatus(data.status);
     }
-  }, [mpColor]);
+  }, []);
 
-  // 5c: Multiplayer sync hook — keeps both clients in lockstep
   const { syncState } = useMultiplayerSync({
     socket: mpSocket,
     roomCode: mpRoomCode,
     myColor: mpColor,
-    onRemoteState: handleRemoteState, // Pass the stabilized reference here
+    onRemoteState: handleRemoteState,
   });
 
-  // Reset/Start whole new match campaign
-  const startNewMatch = () => {
-    setPlayerScore(0);
-    setOpponentScore(0);
-    setUpgrades([]);
-    setRoundCounter(1);
-
-    // In campaign mode, opponent level is reset to 1
-    const initialOppBoons = gameMode === 'campaign' ? getOpponentCampaignBoons(1) : [];
-    setOpponentUpgrades(initialOppBoons);
-    setLevel(1);
-
-    setupNextRound(1, [], initialOppBoons);
-    setStatus('playing');
-  };
-
-  // Re-initializes board state for next round within the ongoing match
   const setupNextRound = (
     stageLvl: number,
     whiteBoons: string[],
-    blackBoons: string[]
+    blackBoons: string[],
+    startColor: 'white' | 'black'
   ) => {
     roundEndingRef.current = false;
     setBoard(createInitialBoard(stageLvl, whiteBoons, blackBoons));
-    setTurn('white');
+    setTurn(startColor);
+    setRoundStartColor(startColor);
     setSelectedPos(null);
     setValidMoves([]);
     setCapturedByWhite([]);
@@ -149,6 +131,20 @@ export default function App() {
     setMoveHistory([]);
     setIsAIThinking(false);
     setCrumblingColor(null);
+  };
+
+  const startNewMatch = () => {
+    setPlayerScore(0);
+    setOpponentScore(0);
+    setUpgrades([]);
+    setRoundCounter(1);
+
+    const initialOppBoons = gameMode === 'campaign' ? getOpponentCampaignBoons(1) : [];
+    setOpponentUpgrades(initialOppBoons);
+    setLevel(1);
+
+    setupNextRound(1, [], initialOppBoons, 'white');
+    setStatus('playing');
   };
 
   const checkKingCaptured = (boardState: Board): 'white' | 'black' | null => {
@@ -163,12 +159,11 @@ export default function App() {
         }
       }
     }
-    if (!whiteKingAlive) return 'black'; // Black wins round
-    if (!blackKingAlive) return 'white'; // White wins round
+    if (!whiteKingAlive) return 'black';
+    if (!blackKingAlive) return 'white';
     return null;
   };
 
-  // Formulate algebraic notation
   const getMoveNotation = (piece: Piece, from: Position, to: Position, isCapture: boolean) => {
     const cols = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
     const ranks = ['8', '7', '6', '5', '4', '3', '2', '1'];
@@ -176,24 +171,14 @@ export default function App() {
     const fromFile = cols[from.c];
 
     if (piece.type === 'pawn') {
-      if (isCapture) {
-        return `${fromFile}x${toCell}`;
-      }
-      return toCell;
+      return isCapture ? `${fromFile}x${toCell}` : toCell;
     }
 
     const pieceLetters: Record<string, string> = {
-      king: 'K',
-      queen: 'Q',
-      rook: 'R',
-      bishop: 'B',
-      knight: 'N'
+      king: 'K', queen: 'Q', rook: 'R', bishop: 'B', knight: 'N'
     };
     const letter = pieceLetters[piece.type] || '';
-    if (isCapture) {
-      return `${letter}x${toCell}`;
-    }
-    return `${letter}${toCell}`;
+    return isCapture ? `${letter}x${toCell}` : `${letter}${toCell}`;
   };
 
   const endRound = (winner: 'white' | 'black') => {
@@ -205,7 +190,11 @@ export default function App() {
     let nextPlayerScore = s.playerScore;
     let nextOpponentScore = s.opponentScore;
 
-    if (winner === 'white') {
+    const localWon = s.gameMode === 'online'
+      ? winner === s.mpColor
+      : winner === 'white';
+
+    if (localWon) {
       nextPlayerScore += 1;
       setPlayerScore(nextPlayerScore);
     } else {
@@ -214,18 +203,19 @@ export default function App() {
     }
 
     if (nextPlayerScore >= s.matchTarget) {
-      setStatus(s.gameMode === 'online' && s.mpColor === 'black' ? 'match-lost' : 'match-won');
+      setStatus('match-won');
       return;
     }
     if (nextOpponentScore >= s.matchTarget) {
-      setStatus(s.gameMode === 'online' && s.mpColor === 'white' ? 'match-lost' : 'match-won');
+      setStatus('match-lost');
       return;
     }
 
     if (s.gameMode === 'online') {
       const loserColor = winner === 'white' ? 'black' : 'white';
       if (s.mpColor === loserColor) {
-        setUpgradeChoices(getRandomUpgrades(s.mpColor === 'white' ? s.upgrades : s.opponentUpgrades));
+        const loserUpgrades = loserColor === 'white' ? s.upgrades : s.opponentUpgrades;
+        setUpgradeChoices(getRandomUpgrades(loserUpgrades, loserUpgrades));
         setStatus('round-end-notifying');
       } else {
         setStatus('waiting-for-opponent-upgrade');
@@ -236,19 +226,18 @@ export default function App() {
     const isWhiteLoser = winner === 'black';
 
     if (isWhiteLoser) {
-      setUpgradeChoices(getRandomUpgrades(s.upgrades));
+      setUpgradeChoices(getRandomUpgrades(s.upgrades, s.upgrades));
       setStatus('round-end-notifying');
     } else {
       if (s.gameMode === 'campaign') {
-        const remainingUpgrades = getRandomUpgrades(s.opponentUpgrades);
+        const remainingUpgrades = getRandomUpgrades(s.opponentUpgrades, s.opponentUpgrades);
         if (remainingUpgrades.length > 0) {
-          const selectedBoon = remainingUpgrades[0];
-          setAiSelectedBoon(selectedBoon);
+          setAiSelectedBoon(remainingUpgrades[0]);
         } else {
           setAiSelectedBoon(null);
         }
       } else {
-        setUpgradeChoices(getRandomUpgrades(s.opponentUpgrades));
+        setUpgradeChoices(getRandomUpgrades(s.opponentUpgrades, s.opponentUpgrades));
       }
       setStatus('round-end-notifying');
     }
@@ -273,9 +262,11 @@ export default function App() {
 
         const nextLvl = level + 1;
         setLevel(nextLvl);
-        setRoundCounter(prev => prev + 1);
+        const nextRound = roundCounter + 1;
+        setRoundCounter(nextRound);
+        const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
 
-        setupNextRound(nextLvl, upgrades, nextOppBoons);
+        setupNextRound(nextLvl, upgrades, nextOppBoons, nextStartColor);
         setStatus('playing');
       } else {
         setStatus('upgrading-black');
@@ -299,14 +290,17 @@ export default function App() {
     if (gameMode === 'campaign') setLevel(nextLvl);
     const nextRound = roundCounter + 1;
     setRoundCounter(nextRound);
+    const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
 
-    setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades);
+    setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
     setStatus('playing');
 
     if (gameMode === 'online') {
+      const newBoard = createInitialBoard(nextLvl, nextWhiteUpgrades, nextBlackUpgrades);
       syncState({
-        board: createInitialBoard(nextLvl, nextWhiteUpgrades, nextBlackUpgrades),
-        turn: 'white',
+        board: newBoard,
+        turn: nextStartColor,
+        roundStartColor: nextStartColor,
         upgrades: nextWhiteUpgrades,
         opponentUpgrades: nextBlackUpgrades,
         enPassantTarget: null,
@@ -340,6 +334,7 @@ export default function App() {
 
     if (selectedPos) {
       const isMoveValid = validMoves.some(m => m.r === r && m.c === c);
+
       if (isMoveValid) {
         setExplodedCells([]);
         const movingPiece = board[selectedPos.r][selectedPos.c];
@@ -387,6 +382,7 @@ export default function App() {
           if (gameMode === 'online') {
             syncState({
               board: nextBoard, turn: nextTurn,
+              roundStartColor,
               upgrades,
               opponentUpgrades,
               enPassantTarget: nextEnPassantTarget,
@@ -407,6 +403,7 @@ export default function App() {
         if (gameMode === 'online') {
           syncState({
             board: nextBoard, turn: nextTurn,
+            roundStartColor,
             upgrades,
             opponentUpgrades,
             enPassantTarget: nextEnPassantTarget,
@@ -427,13 +424,11 @@ export default function App() {
     }
   };
 
-  // AI strategy triggers if Campaign and Black holds current turn
   const executeAIMovement = useCallback(() => {
     if (status !== 'playing' || turn !== 'black' || isAIThinking || gameMode !== 'campaign') return;
     setIsAIThinking(true);
 
     setTimeout(() => {
-      // Determine optimum lookup score
       const aiMove = getAIMove(board, aiDifficulty, upgrades, opponentUpgrades);
       if (!aiMove) {
         setIsAIThinking(false);
@@ -487,7 +482,7 @@ export default function App() {
   }, [board, status, turn, isAIThinking, upgrades, opponentUpgrades, aiDifficulty, gameMode, enPassantTarget]);
 
   useEffect(() => {
-    if (turn === 'black' && gameMode === 'campaign' && status === 'playing' && !roundEndingRef.current) {
+    if (gameMode === 'campaign' && status === 'playing' && !roundEndingRef.current && turn === 'black') {
       executeAIMovement();
     }
   }, [turn, executeAIMovement, gameMode, status]);
@@ -507,6 +502,54 @@ export default function App() {
     );
   };
 
+  const getTurnLabel = () => {
+    if (gameMode === 'online') {
+      const isMyTurn = turn === mpColor;
+      const colorLabel = turn === 'white' ? '(W)' : '(B)';
+      return isMyTurn ? `YOUR TURN ${colorLabel}` : `${mpOppName.toUpperCase()}'S TURN ${colorLabel}`;
+    }
+    if (gameMode === 'campaign') {
+      return turn === 'white' ? 'ALPHA (W) TURN' : 'AI SYSTEM THINKING (B)';
+    }
+    return turn === 'white' ? 'ALPHA (W) TURN' : 'BETA (B) TURN';
+  };
+
+  const BoonTooltipList = ({ boonIds, color }: { boonIds: string[]; color: 'emerald' | 'pink' }) => {
+    const [hoveredId, setHoveredId] = useState<string | null>(null);
+
+    return (
+      <div className="space-y-1.5 mt-2 max-h-[140px] overflow-y-auto pr-1">
+        {boonIds.map(uid => {
+          const orig = ALL_UPGRADES.find(u => u.id === uid);
+          if (!orig) return null;
+          const isHovered = hoveredId === uid;
+          return (
+            <div
+              key={uid}
+              className={`relative p-1.5 border flex items-center gap-2 cursor-default ${color === 'emerald' ? 'border-zinc-800 bg-zinc-950' : 'border-zinc-850 bg-[#090909]'}`}
+              onMouseEnter={() => setHoveredId(uid)}
+              onMouseLeave={() => setHoveredId(null)}
+            >
+              <div className={`w-4 h-4 bg-black flex items-center justify-center shrink-0 ${color === 'emerald' ? 'border border-zinc-700' : 'border border-zinc-800'}`}>
+                <BoonIcon iconName={orig.icon} className={`w-2.5 h-2.5 ${color === 'emerald' ? 'text-zinc-300' : 'text-pink-500/80'}`} />
+              </div>
+              <span className={`text-[7.5px] truncate ${color === 'emerald' ? 'text-zinc-300' : 'text-pink-400'}`}>{orig.name}</span>
+              {isHovered && (
+                <div
+                  className="fixed z-[100] w-48 p-2 bg-zinc-900 border border-zinc-600 text-[7.5px] text-zinc-300 leading-relaxed shadow-lg pointer-events-none"
+                  style={{ marginLeft: '200px', transform: 'translateY(-50%)' }}
+                >
+                  <p className={`font-bold mb-1 ${color === 'emerald' ? 'text-zinc-100' : 'text-pink-300'}`}>{orig.name}</p>
+                  <p>{orig.description}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
   return (
     <div className={`min-h-screen text-zinc-300 flex flex-col font-mono select-none transition-colors duration-300
       ${theme === 'classic' ? 'bg-[#050505]' : ''}
@@ -520,7 +563,8 @@ export default function App() {
         ${theme === 'retro-cyber' ? 'bg-[#020617] border-indigo-950 text-sky-400' : ''}
       `} id="page-header">
         <div className="flex items-center gap-3">
-          <svg viewBox="0 0 45 45" className={`w-5 h-5 ${theme === 'retro-green' ? 'text-green-500' : theme === 'retro-cyber' ? 'text-pink-500' : 'text-emerald-400'}`} xmlns="http://www.w3.org/2000/svg" dangerouslySetInnerHTML={{ __html: `<path fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/>` }} />          <h1 className="text-[10px] uppercase tracking-tight font-bold text-white font-pixel">
+          <svg viewBox="0 0 45 45" className={`w-5 h-5 ${theme === 'retro-green' ? 'text-green-500' : theme === 'retro-cyber' ? 'text-pink-500' : 'text-emerald-400'}`} xmlns="http://www.w3.org/2000/svg" dangerouslySetInnerHTML={{ __html: `<path fill="currentColor" stroke="currentColor" stroke-linecap="round" stroke-width="1.5" d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"/>` }} />
+          <h1 className="text-[10px] uppercase tracking-tight font-bold text-white font-pixel">
             VOID CHESS
           </h1>
         </div>
@@ -601,7 +645,7 @@ export default function App() {
                           : 'bg-black border-zinc-800 text-zinc-400 hover:text-zinc-200'
                         }`}
                     >
-                    ONLINE PvP
+                      ONLINE PvP
                     </button>
                   </div>
                 </div>
@@ -627,23 +671,23 @@ export default function App() {
                 )}
 
                 {gameMode !== 'online' && (
-                <div>
-                  <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">MATCH GOAL (WINS TARGET)</span>
-                  <div className="flex gap-2">
-                    {[3, 5, 7].map(t => (
-                      <button
-                        key={t}
-                        onClick={() => setMatchTarget(t)}
-                        className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${matchTarget === t
-                            ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
-                            : 'bg-black border-zinc-800 text-zinc-500'
-                          }`}
-                      >
-                        FIRST TO {t}
-                      </button>
-                    ))}
+                  <div>
+                    <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">MATCH GOAL (WINS TARGET)</span>
+                    <div className="flex gap-2">
+                      {[3, 5, 7].map(t => (
+                        <button
+                          key={t}
+                          onClick={() => setMatchTarget(t)}
+                          className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${matchTarget === t
+                              ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
+                              : 'bg-black border-zinc-800 text-zinc-500'
+                            }`}
+                        >
+                          FIRST TO {t}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
                 )}
 
                 <div>
@@ -700,11 +744,12 @@ export default function App() {
           {showLobby && (
             <div className="fixed inset-0 z-50">
               <MultiplayerLobby
-                onReady={({ socket, color, roomCode, opponentName, matchTarget: lobbyTarget }) => {
+                onReady={({ socket, color, roomCode, opponentName, playerName: myName, matchTarget: lobbyTarget }) => {
                   setMpSocket(socket);
                   setMpColor(color);
                   setMpRoomCode(roomCode);
                   setMpOppName(opponentName);
+                  setMpPlayerName(myName ?? '');
                   setMatchTarget(lobbyTarget);
                   setShowLobby(false);
                   startNewMatch();
@@ -723,7 +768,6 @@ export default function App() {
               className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full select-none"
               id="playing-screen"
             >
-
               <aside className={`lg:col-span-3 border-4 p-4 flex flex-col gap-4 font-pixel select-none
                 ${theme === 'classic' ? 'border-zinc-800 bg-black' : ''}
                 ${theme === 'retro-green' ? 'border-green-950 bg-black text-green-400' : ''}
@@ -759,20 +803,7 @@ export default function App() {
                   {upgrades.length === 0 ? (
                     <p className="text-zinc-650 text-[8px] italic mt-1">NONE</p>
                   ) : (
-                    <div className="space-y-1.5 mt-2 max-h-[140px] overflow-y-auto pr-1">
-                      {upgrades.map(uid => {
-                        const orig = ALL_UPGRADES.find(u => u.id === uid);
-                        if (!orig) return null;
-                        return (
-                          <div key={uid} className="p-1.5 border border-zinc-800 bg-zinc-950 flex items-center gap-2">
-                            <div className="w-4 h-4 bg-black border border-zinc-700 flex items-center justify-center shrink-0">
-                              <BoonIcon iconName={orig.icon} className="w-2.5 h-2.5 text-zinc-300" />
-                            </div>
-                            <span className="text-[7.5px] text-zinc-300 truncate">{orig.name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <BoonTooltipList boonIds={upgrades} color="emerald" />
                   )}
                 </div>
 
@@ -783,20 +814,7 @@ export default function App() {
                   {opponentUpgrades.length === 0 ? (
                     <p className="text-zinc-650 text-[8px] italic mt-1">NONE</p>
                   ) : (
-                    <div className="space-y-1.5 mt-2 max-h-[140px] overflow-y-auto pr-1">
-                      {opponentUpgrades.map(uid => {
-                        const orig = ALL_UPGRADES.find(u => u.id === uid);
-                        if (!orig) return null;
-                        return (
-                          <div key={uid} className="p-1.5 border border-zinc-850 bg-[#090909] flex items-center gap-2">
-                            <div className="w-4 h-4 bg-black border border-zinc-800 flex items-center justify-center shrink-0">
-                              <BoonIcon iconName={orig.icon} className="w-2.5 h-2.5 text-pink-500/80" />
-                            </div>
-                            <span className="text-[7.5px] text-pink-400 truncate">{orig.name}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <BoonTooltipList boonIds={opponentUpgrades} color="pink" />
                   )}
                 </div>
               </aside>
@@ -804,14 +822,9 @@ export default function App() {
               <div className="lg:col-span-6 flex flex-col items-center justify-center p-1" id="board-center">
                 <div className="w-full max-w-[480px] mb-3 p-2 bg-zinc-950 border-2 border-zinc-850 text-center font-pixel flex items-center justify-between px-4">
                   <span className="text-[8px] text-zinc-500 uppercase">ACTIVE ARENA</span>
-
                   <span className="text-[9px] font-bold tracking-wider text-emerald-400">
-                    {turn === 'white'
-                      ? gameMode === 'online' ? (mpColor === 'white' ? 'YOUR TURN (W)' : `${mpOppName.toUpperCase()}'S TURN (W)`) : 'ALPHA (W) TURN'
-                      : gameMode === 'campaign' ? 'AI SYSTEM THINKING (B)'
-                      : gameMode === 'online' ? (mpColor === 'black' ? 'YOUR TURN (B)' : `${mpOppName.toUpperCase()}'S TURN (B)`) : 'BETA (B) TURN'}
+                    {getTurnLabel()}
                   </span>
-
                   <span className="text-[8px] text-zinc-500 uppercase">
                     STAGE {level}
                   </span>
@@ -856,7 +869,9 @@ export default function App() {
                   <p className="text-zinc-500 text-[8px] uppercase mb-2">GRAVEYARD</p>
                   <div className="space-y-2 text-zinc-400">
                     <div className="p-2 bg-[#090909] border border-zinc-850">
-                      <span className="text-emerald-400 text-[7px] block uppercase mb-1">ALPHA ELIMINATED:</span>
+                      <span className="text-emerald-400 text-[7px] block uppercase mb-1">
+                        {gameMode === 'online' ? (mpColor === 'white' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : 'ALPHA'} ELIMINATED:
+                      </span>
                       <div className="flex flex-wrap gap-1 mt-1 text-sm font-sans leading-none">
                         {capturedByWhite.length === 0 ? (
                           <span className="text-zinc-650 text-[7px] font-pixel">NONE</span>
@@ -870,7 +885,9 @@ export default function App() {
                       </div>
                     </div>
                     <div className="p-2 bg-[#090909] border border-zinc-850">
-                      <span className="text-rose-500 text-[7px] block uppercase mb-1">BETA ELIMINATED:</span>
+                      <span className="text-rose-500 text-[7px] block uppercase mb-1">
+                        {gameMode === 'online' ? (mpColor === 'black' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : (gameMode === 'pvp' ? 'BETA' : 'AI DREAD')} ELIMINATED:
+                      </span>
                       <div className="flex flex-wrap gap-1 mt-1 text-sm font-sans leading-none">
                         {capturedByBlack.length === 0 ? (
                           <span className="text-zinc-650 text-[7px] font-pixel">NONE</span>
@@ -903,8 +920,8 @@ export default function App() {
               </div>
 
               <h2 className="text-sm font-bold text-white uppercase tracking-tight">
-                {roundWinner === 'white' && 'ROUND WON BY ALPHA!'}
-                {roundWinner === 'black' && 'ROUND WON BY BLACK!'}
+                {roundWinner === 'white' && (gameMode === 'online' ? (mpColor === 'white' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : 'ROUND WON BY ALPHA!')}
+                {roundWinner === 'black' && (gameMode === 'online' ? (mpColor === 'black' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : 'ROUND WON BY BETA!')}
               </h2>
 
               <div className="mt-4 p-3 bg-zinc-950 border border-zinc-850 text-left">
@@ -912,7 +929,7 @@ export default function App() {
                   CURRENT MATCH SCORE:
                 </p>
                 <p className="text-xs text-center text-white font-bold mt-1">
-                  ALPHA: {playerScore} | {gameMode === 'online' ? mpOppName.toUpperCase() : 'OPPOSITION'}: {opponentScore}
+                  {gameMode === 'online' ? 'YOU' : 'ALPHA'}: {playerScore} | {gameMode === 'online' ? mpOppName.toUpperCase() : 'OPPOSITION'}: {opponentScore}
                 </p>
               </div>
 
@@ -977,6 +994,7 @@ export default function App() {
               choices={upgradeChoices}
               onSelectUpgrade={(id) => handleUpgradeSelect(id, 'white')}
               level={roundCounter + 1}
+              playerName={gameMode === 'online' ? (mpColor === 'white' ? 'YOU' : mpOppName) : 'ALPHA'}
             />
           )}
 
@@ -985,6 +1003,7 @@ export default function App() {
               choices={upgradeChoices}
               onSelectUpgrade={(id) => handleUpgradeSelect(id, 'black')}
               level={roundCounter + 1}
+              playerName={gameMode === 'online' ? (mpColor === 'black' ? 'YOU' : mpOppName) : (gameMode === 'pvp' ? 'BETA' : 'AI DREAD')}
             />
           )}
 
