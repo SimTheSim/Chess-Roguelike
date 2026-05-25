@@ -11,6 +11,7 @@ export interface ReadyPayload {
   opponentName: string;
   playerName: string;
   matchTarget: number;
+  upgradePriority: 'loser-only' | 'loser-then-winner';
 }
 
 interface MultiplayerLobbyProps {
@@ -31,6 +32,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
   const [copied, setCopied] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [matchTarget, setMatchTarget] = useState<number>(5);
+  const [upgradePriority, setUpgradePriority] = useState<'loser-only' | 'loser-then-winner'>('loser-only');
 
   const socketRef = useRef<Socket | null>(null);
   const handedOffRef = useRef(false);
@@ -56,7 +58,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     setConnecting(true);
     const socket = getSocket();
 
-    socket.emit('create_room', { playerName: playerName.trim(), matchTarget }, (res: any) => {
+    socket.emit('create_room', { playerName: playerName.trim(), matchTarget, upgradePriority }, (res: any) => {
       setConnecting(false);
       if (!res.ok) { setError(res.error ?? 'Server error.'); return; }
       setRoomCode(res.code);
@@ -67,7 +69,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         setOpponentName(name);
         setTimeout(() => {
           handedOffRef.current = true;
-          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, playerName: playerName.trim(), matchTarget });
+          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, playerName: playerName.trim(), matchTarget, upgradePriority });
         }, 800);
       });
     });
@@ -91,7 +93,8 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         const oppName = res.room.playerNames[res.color === 'white' ? 'black' : 'white'] ?? 'Opponent';
         handedOffRef.current = true;
         const roomMatchTarget = res.room.matchTarget ?? 5;
-        onReady({ socket, color: res.color, roomCode: res.code, opponentName: oppName, matchTarget: roomMatchTarget });
+        const roomUpgradePriority = res.room.upgradePriority ?? 'loser-only';
+        onReady({ socket, color: res.color, roomCode: res.code, opponentName: oppName, matchTarget: roomMatchTarget, upgradePriority: roomUpgradePriority });
       }
     );
   };
@@ -231,6 +234,31 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                   ))}
                 </div>
               </div>
+
+              <div className="mb-6">
+                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2 text-center">BOON DRAFT MODE</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setUpgradePriority('loser-only')}
+                    className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${upgradePriority === 'loser-only'
+                      ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
+                      : 'bg-black border-zinc-800 text-zinc-500'
+                    }`}
+                  >
+                    LOSER PICKS
+                  </button>
+                  <button
+                    onClick={() => setUpgradePriority('loser-then-winner')}
+                    className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${upgradePriority === 'loser-then-winner'
+                      ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
+                      : 'bg-black border-zinc-800 text-zinc-500'
+                    }`}
+                  >
+                    LOSER THEN WINNER
+                  </button>
+                </div>
+              </div>
+
               <p className="text-zinc-400 text-[8px] leading-relaxed text-center mb-8">
                 A room code will be generated.<br/>
                 Share it with your opponent so they can join.

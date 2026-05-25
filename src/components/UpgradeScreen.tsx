@@ -8,6 +8,7 @@ interface UpgradeScreenProps {
   onSelectUpgrade: (id: string) => void;
   level: number;
   playerName?: string;
+  pickedId?: string | null;
 }
 
 
@@ -16,6 +17,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
   onSelectUpgrade,
   level,
   playerName = 'PLAYER',
+  pickedId,
 }) => {
   const sortedChoices = [...choices].sort((a, b) => {
     const order = { common: 0, rare: 1, epic: 2 };
@@ -116,7 +118,7 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
       >
         <p className="text-emerald-400 font-pixel text-[10px] tracking-wider mb-3">STAGE {level - 1} CLEAR</p>
         <h2 className="text-2xl font-bold text-white uppercase tracking-tight font-pixel">SELECT AN ARTIFACT</h2>
-        <p className="text-zinc-400 font-pixel text-[9px] tracking-wider mt-2">YOU ARE CHOOSING</p>
+        <p className="text-zinc-400 font-pixel text-[9px] tracking-wider mt-2 uppercase">{playerName} {playerName.toUpperCase() === 'YOU' ? 'ARE' : 'IS'} PICKING</p>
       </motion.div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full">
@@ -124,14 +126,20 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
           return (
             <motion.button
               key={upgrade.id}
-              initial={{ opacity: 0, scale: 0.95 }}              onClick={() => onSelectUpgrade(upgrade.id)}
-              className={`relative group flex flex-col items-center text-center p-5 border-4 transition-all duration-150 cursor-pointer outline-none focus:ring-4 focus:ring-emerald-400 select-none ${revealed[upgrade.id] ? getRarityClass(upgrade.rarity) : 'border-zinc-800 bg-black text-zinc-300 shadow-[4px_4px_0px_#27272a]'}
+              initial={{ opacity: 0, scale: 0.95 }}
+              onClick={() => {
+                if (upgrade.id !== pickedId) {
+                  onSelectUpgrade(upgrade.id);
+                }
+              }}
+              disabled={upgrade.id === pickedId}
+              className={`relative group flex flex-col items-center text-center p-5 border-4 transition-all duration-150 outline-none select-none ${upgrade.id === pickedId ? 'border-red-900 bg-zinc-950 opacity-40 cursor-not-allowed line-through' : `cursor-pointer focus:ring-4 focus:ring-emerald-400 ${revealed[upgrade.id] ? getRarityClass(upgrade.rarity) : 'border-zinc-800 bg-black text-zinc-300 shadow-[4px_4px_0px_#27272a]'}`}
               `}
               id={`upgrade-choice-${upgrade.id}`}
               animate={{
                 opacity: 1,
                 scale: 1,
-                ...(revealed[upgrade.id] && upgrade.rarity === 'epic' && {
+                ...(revealed[upgrade.id] && upgrade.rarity === 'epic' && upgrade.id !== pickedId && {
                   boxShadow: ['4px 4px 0px #7c3aed', '4px 4px 0px #a855f7', '4px 4px 0px #7c3aed'],
                 }),
               }}
@@ -139,9 +147,14 @@ export const UpgradeScreen: React.FC<UpgradeScreenProps> = ({
                 ? { duration: 0.3, boxShadow: { duration: 2, repeat: Infinity } }
                 : { duration: 0.3 }
               }
-              whileHover={{ scale: 1.03, filter: revealed[upgrade.id] ? getRarityGlow(upgrade.rarity) : 'none' }}
+              whileHover={{ scale: upgrade.id === pickedId ? 1 : 1.03, filter: revealed[upgrade.id] && upgrade.id !== pickedId ? getRarityGlow(upgrade.rarity) : 'none' }}
               style={{ overflow: 'visible' }}
             >
+              {upgrade.id === pickedId && (
+                <div className="absolute inset-0 flex items-center justify-center z-10 pointer-events-none">
+                  <span className="bg-red-600 text-white text-[8px] font-bold px-2 py-0.5 uppercase tracking-wider transform -rotate-12 border border-black shadow">CLAIMED BY LOSER</span>
+                </div>
+              )}
               <div className={`absolute top-0 left-0 right-0 h-0.5 ${revealed[upgrade.id] ? (
                 upgrade.rarity === 'epic' ? 'bg-purple-500 opacity-80' :
                 upgrade.rarity === 'rare' ? 'bg-blue-500 opacity-50' : 'opacity-0'

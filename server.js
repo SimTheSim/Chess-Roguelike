@@ -62,6 +62,8 @@ function roomSummary(room) {
       black: room.players.black !== null,
     },
     full: room.players.white !== null && room.players.black !== null,
+    matchTarget: room.matchTarget,
+    upgradePriority: room.upgradePriority,
   };
 }
 
@@ -70,12 +72,14 @@ io.on('connection', (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
   // ── CREATE ROOM ──────────────────────────────────────────────────────────────
-  socket.on('create_room', ({ playerName }, callback) => {
+  socket.on('create_room', ({ playerName, matchTarget, upgradePriority }, callback) => {
     const code = generateRoomCode();
     rooms[code] = {
       code,
       players: { white: socket.id, black: null },
       playerNames: { white: playerName || 'Host', black: '' },
+      upgradePriority: upgradePriority || 'loser-only',
+      matchTarget: matchTarget || 5,
       gameState: null,
       createdAt: Date.now(),
     };
