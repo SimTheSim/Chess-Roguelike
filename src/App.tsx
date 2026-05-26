@@ -14,6 +14,9 @@ import { Board, Position, Piece } from './types';
 import { motion, AnimatePresence } from 'motion/react';
 import { BoonIcon } from './components/BoonIcon';
 import { MultiplayerLobby, useMultiplayerSync } from './components/MultiplayerLobby';
+import { GameEndScreen } from './components/GameEndScreen';
+import { ComboUnlockScreen } from './components/ComboUnlockScreen';
+import { getActiveCombos } from './components/artifactRegistry';
 import type { Socket } from 'socket.io-client';
 
 export default function App() {
@@ -52,7 +55,7 @@ export default function App() {
   const [crumblingColor, setCrumblingColor] = useState<'white' | 'black' | null>(null);
 
   const [status, setStatus] = useState<
-    'start' | 'playing' | 'round-end-notifying' | 'waiting-for-opponent-proceed' | 'upgrading-white' | 'upgrading-black' | 'match-won' | 'match-lost' | 'waiting-for-opponent-upgrade' | 'upgrading-winner-white' | 'upgrading-winner-black'
+    'start' | 'playing' | 'round-end-notifying' | 'waiting-for-opponent-proceed' | 'upgrading-white' | 'upgrading-black' | 'match-won' | 'match-lost' | 'waiting-for-opponent-upgrade' | 'upgrading-winner-white' | 'upgrading-winner-black' | 'combo-pending'
   >('start');
 
   const roundEndingRef = useRef(false);
@@ -67,6 +70,11 @@ export default function App() {
   const [aiSelectedBoon, setAiSelectedBoon] = useState<any | null>(null);
   const [loserChosenId, setLoserChosenId] = useState<string | null>(null);
   const [oppProceeded, setOppProceeded] = useState(false);
+  const [pendingCombo, setPendingCombo] = useState<{ artifactA: any; artifactB: any; bonusDescription: string; bonusTag: string } | null>(null);
+  const [comboOpponentProceeded, setComboOpponentProceeded] = useState(false);
+  const myComboProceededRef = useRef(false);
+  const postComboActionRef = useRef<(() => void) | null>(null);
+
 
   const handleRemoteState = useCallback((state: any) => {
     if (!state) return;
@@ -101,6 +109,10 @@ export default function App() {
       setOppProceeded(data.proceeded);
     }
 
+    if (data.comboProceed !== undefined) {
+      setComboOpponentProceeded(data.comboProceed);
+    }
+
     if (data.roundOver) {
       const loserColor = data.roundOver === 'white' ? 'black' : 'white';
       setCrumblingColor(loserColor);
@@ -115,11 +127,23 @@ export default function App() {
       if (data.status === 'upgrading-winner-white' || data.status === 'upgrading-winner-black') {
         if (data.winnerChoices) setUpgradeChoices(data.winnerChoices);
       }
+      
+      if (data.status === 'combo-pending-loser') {
+        roundEndingRef.current = false;
+        setSelectedPos(null);
+        setValidMoves([]);
+        setPendingCombo(data.pendingCombo);
+        setStatus('combo-pending');
+        postComboActionRef.current = () => setStatus('playing');
+        return;
+      }
+      
       if (data.status === 'playing') {
         roundEndingRef.current = false;
         setSelectedPos(null);
         setValidMoves([]);
       }
+      
       setStatus(data.status);
     }
   }, []);
@@ -300,12 +324,15 @@ export default function App() {
         }
 
         const nextLvl = level + 1;
-        setLevel(nextLvl);
         const nextRound = roundCounter + 1;
-        setRoundCounter(nextRound);
         const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
-        setupNextRound(nextLvl, upgrades, nextOppBoons, nextStartColor);
-        setStatus('playing');
+
+        checkAndShowCombo(upgrades, nextOppBoons, upgrades, opponentUpgrades, () => {
+          setLevel(nextLvl);
+          setRoundCounter(nextRound);
+          setupNextRound(nextLvl, upgrades, nextOppBoons, nextStartColor);
+          setStatus('playing');
+        });
       } else {
         setStatus('upgrading-black');
       }
@@ -352,18 +379,34 @@ export default function App() {
     }
 
     if (gameMode === 'online') {
-      if (upgradePriority === 'loser-then-winner') {        
-        syncState({
+      if (upgradePriority === 'loser-then-winner') {
+        const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
+        const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
+        const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+        
+        const syncPayload = {
           upgrades: playerSide === 'white' ? nextWhiteUpgrades : upgrades,
           opponentUpgrades: playerSide === 'black' ? nextBlackUpgrades : opponentUpgrades,
           status: winnerSide === 'white' ? 'upgrading-winner-white' : 'upgrading-winner-black',
           winnerChoices: upgradeChoices.filter(u => u.id !== upgradeId),
           loserChosenId: upgradeId,
-        });
-        
-        setUpgradeChoices(upgradeChoices);
-        setLoserChosenId(upgradeId);
-        setStatus('waiting-for-opponent-upgrade');
+        };
+
+        if (newCombo) {
+          setPendingCombo(newCombo);
+          setStatus('combo-pending');
+          postComboActionRef.current = () => {
+            setUpgradeChoices(upgradeChoices);
+            setLoserChosenId(upgradeId);
+            setStatus('waiting-for-opponent-upgrade');
+          };
+          syncState(syncPayload);
+        } else {
+          syncState(syncPayload);
+          setUpgradeChoices(upgradeChoices);
+          setLoserChosenId(upgradeId);
+          setStatus('waiting-for-opponent-upgrade');
+        }
         return;
       }
       
@@ -371,23 +414,37 @@ export default function App() {
       const nextRound = roundCounter + 1;
       const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
       const newBoard = createInitialBoard(nextLvl, nextWhiteUpgrades, nextBlackUpgrades);
-      setStatus('playing');
-      syncState({
-        board: newBoard,
-        turn: nextStartColor,
-        roundStartColor: nextStartColor,
-        upgrades: nextWhiteUpgrades,
-        opponentUpgrades: nextBlackUpgrades,
-        enPassantTarget: null,
-        capturedByWhite: [],
-        capturedByBlack: [],
-        moveHistory: [],
-        playerScore: opponentScore,
-        opponentScore: playerScore,
-        status: 'playing',
-        roundCounter: nextRound,
-        loserChosenId: null,
-      });
+      
+      const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
+      const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
+      const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+
+      if (newCombo) {
+          setPendingCombo(newCombo);
+          setStatus('combo-pending');
+          postComboActionRef.current = () => {
+              setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+              setStatus('playing');
+              syncState({
+                  board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
+                  upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
+                  enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
+                  moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+                  status: 'playing', roundCounter: nextRound, loserChosenId: null
+              });
+          };
+          syncState({ status: 'waiting-for-opponent-proceed' });
+      } else {
+          setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+          setStatus('playing');
+          syncState({
+              board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
+              upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
+              enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
+              moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+              status: 'playing', roundCounter: nextRound, loserChosenId: null
+          });
+      }
       return;
     }
 
@@ -397,8 +454,10 @@ export default function App() {
     setRoundCounter(nextRound);
     const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
 
-    setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
-    setStatus('playing');
+    checkAndShowCombo(nextWhiteUpgrades, nextBlackUpgrades, upgrades, opponentUpgrades, () => {
+      setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+      setStatus('playing');
+    });
   };
 
   const handleWinnerUpgradeSelect = (upgradeId: string, playerSide: 'white' | 'black') => {
@@ -419,29 +478,65 @@ export default function App() {
     setRoundCounter(nextRound);
     const nextStartColor = roundStartColor === 'white' ? 'black' : 'white';
 
-    setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
     setLoserChosenId(null);
-    setStatus('playing');
 
     if (gameMode === 'online') {
       const newBoard = createInitialBoard(nextLvl, nextWhiteUpgrades, nextBlackUpgrades);
-      syncState({
-        board: newBoard,
-        turn: nextStartColor,
-        roundStartColor: nextStartColor,
-        upgrades: nextWhiteUpgrades,
-        opponentUpgrades: nextBlackUpgrades,
-        enPassantTarget: null,
-        capturedByWhite: [],
-        capturedByBlack: [],
-        moveHistory: [],
-        playerScore: opponentScore,
-        opponentScore: playerScore,
-        status: 'playing',
-        roundCounter: nextRound,
-        loserChosenId: null,
+
+      const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
+      const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
+      const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+
+      if (newCombo) {
+          setPendingCombo(newCombo);
+          setStatus('combo-pending');
+          postComboActionRef.current = () => {
+              setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+              setStatus('playing');
+              syncState({
+                  board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
+                  upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
+                  enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
+                  moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+                  status: 'playing', roundCounter: nextRound, loserChosenId: null
+              });
+          };
+          syncState({ status: 'waiting-for-opponent-proceed' });
+      } else {
+          setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+          setStatus('playing');
+          syncState({
+              board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
+              upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
+              enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
+              moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+              status: 'playing', roundCounter: nextRound, loserChosenId: null
+          });
+      }
+    } else {
+      checkAndShowCombo(nextWhiteUpgrades, nextBlackUpgrades, upgrades, opponentUpgrades, () => {
+        setupNextRound(nextLvl, nextWhiteUpgrades, nextBlackUpgrades, nextStartColor);
+        setStatus('playing');
       });
     }
+  };
+
+  const checkAndShowCombo = (newUpgrades: string[], newOpponentUpgrades: string[], prevWhite: string[], prevBlack: string[], afterAction: () => void) => {
+    const whiteCombos = getActiveCombos(newUpgrades);
+    const blackCombos = getActiveCombos(newOpponentUpgrades);
+    const prevWhiteCombos = getActiveCombos(prevWhite);
+    const prevBlackCombos = getActiveCombos(prevBlack);
+
+    const newCombo = whiteCombos.find(c => !prevWhiteCombos.some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id))
+                  || blackCombos.find(c => !prevBlackCombos.some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+
+    if (!newCombo) {
+      afterAction();
+      return;
+    }
+    setPendingCombo(newCombo);
+    setStatus('combo-pending');
+    postComboActionRef.current = afterAction;
   };
 
   const handleCellClick = (r: number, c: number) => {
@@ -659,9 +754,6 @@ export default function App() {
               onMouseEnter={() => setHoveredId(uid)}
               onMouseLeave={() => setHoveredId(null)}
             >
-              <div className={`w-4 h-4 bg-black flex items-center justify-center shrink-0 ${color === 'emerald' ? 'border border-zinc-700' : 'border border-zinc-800'}`}>
-                <BoonIcon iconName={orig.icon} className={`w-2.5 h-2.5 ${color === 'emerald' ? 'text-zinc-300' : 'text-pink-500/80'}`} />
-              </div>
               <span className={`text-[7.5px] truncate ${color === 'emerald' ? 'text-zinc-300' : 'text-pink-400'}`}>{orig.name}</span>
               {isHovered && (
                 <div
@@ -678,6 +770,7 @@ export default function App() {
       </div>
     );
   };
+
 
   return (
     <div className={`min-h-screen text-zinc-300 flex flex-col font-mono select-none transition-colors duration-300
@@ -833,7 +926,7 @@ export default function App() {
                           ))}
                         </div>
                         <div>
-                          <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">BOON DRAFT MODE</span>
+                          <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2 mt-4">BOON DRAFT MODE</span>
                           <div className="flex gap-2">
                             <button
                               onClick={() => setUpgradePriority('loser-only')}
@@ -1000,13 +1093,11 @@ export default function App() {
 
               <div className="lg:col-span-6 flex flex-col items-center justify-center p-1" id="board-center">
                 <div className="w-full max-w-[480px] mb-3 p-2 bg-zinc-950 border-2 border-zinc-850 text-center font-pixel flex items-center justify-between px-4">
-                  <span className="text-[8px] text-zinc-500 uppercase">ACTIVE ARENA</span>
+                  <span></span>
                   <span className="text-[9px] font-bold tracking-wider text-emerald-400">
                     {getTurnLabel()}
                   </span>
-                  <span className="text-[8px] text-zinc-500 uppercase">
-                    STAGE {level}
-                  </span>
+                  <span></span>
                 </div>
 
                 <ChessBoard
@@ -1121,7 +1212,7 @@ export default function App() {
             </motion.div>
           )}
 
-          {status === 'upgrading-white' && (
+          {status === 'upgrading-white' && !pendingCombo && (
             <UpgradeScreen
               choices={upgradeChoices}
               onSelectUpgrade={(id) => handleUpgradeSelect(id, 'white')}
@@ -1130,7 +1221,7 @@ export default function App() {
             />
           )}
 
-          {status === 'upgrading-black' && (
+          {status === 'upgrading-black' && !pendingCombo && (
             <UpgradeScreen
               choices={upgradeChoices}
               onSelectUpgrade={(id) => handleUpgradeSelect(id, 'black')}
@@ -1139,7 +1230,7 @@ export default function App() {
             />
           )}
 
-          {status === 'upgrading-winner-white' && (
+          {status === 'upgrading-winner-white' && !pendingCombo && (
             <UpgradeScreen
               choices={gameMode === 'campaign' ? upgradeChoices.filter(c => c.id !== loserChosenId) : upgradeChoices}
               onSelectUpgrade={(id) => handleWinnerUpgradeSelect(id, 'white')}
@@ -1149,7 +1240,7 @@ export default function App() {
             />
           )}
 
-          {status === 'upgrading-winner-black' && (
+          {status === 'upgrading-winner-black' && !pendingCombo && (
             <UpgradeScreen
               choices={upgradeChoices}
               onSelectUpgrade={(id) => handleWinnerUpgradeSelect(id, 'black')}
@@ -1159,7 +1250,7 @@ export default function App() {
             />
           )}
 
-          {status === 'waiting-for-opponent-proceed' && (
+          {status === 'waiting-for-opponent-proceed' && !pendingCombo && (
             <div className="text-center py-10 max-w-2xl mx-auto border-4 border-zinc-850 bg-black p-6 font-pixel">
               <p className="text-emerald-400 text-xs uppercase tracking-wider animate-pulse mb-6">
                 WAITING FOR OPPONENT TO PROCEED...
@@ -1167,7 +1258,7 @@ export default function App() {
             </div>
           )}
 
-          {status === 'waiting-for-opponent-upgrade' && (
+          {status === 'waiting-for-opponent-upgrade' && !pendingCombo && (
             <div className="text-center py-10 max-w-2xl mx-auto border-4 border-zinc-850 bg-black p-6 font-pixel">
               <p className="text-emerald-400 text-xs uppercase tracking-wider animate-pulse mb-6">
                 {gameMode === 'online' ? 'OPPONENT IS CHOOSING AN ARTIFACT...' : 'Waiting for opponent to select their artifact...'}
@@ -1201,71 +1292,45 @@ export default function App() {
             </div>
           )}
 
-          {status === 'match-won' && (
-            <motion.div
-              key="match-won-screen"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-16 max-w-sm mx-auto select-none font-pixel"
-              id="match-won-screen"
-            >
-              <div className="p-4 border-4 border-yellow-400 bg-black inline-block mb-6 text-yellow-455 text-4xl shadow-[4px_4px_0px_#10b981]">
-                <svg viewBox="0 0 24 24" className="w-10 h-10 text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
-              </div>
-
-              <h1 className="text-lg font-bold text-white uppercase tracking-tight">CHALLENGE CONQUERED</h1>
-              <p className="text-zinc-500 mt-2 text-[8px] uppercase">
-                ACHIEVED ABSOLUTE MATCH VICTORY
-              </p>
-
-              <div className="mt-6 p-4 bg-zinc-950 border-2 border-zinc-850 text-left">
-                <span className="text-[7px] block uppercase text-zinc-500 mb-1">MATCH SCORECARD</span>
-                <p className="text-xs text-white font-bold mb-1">{gameMode === 'pvp' ? 'P1' : 'P1'} (PLAYER): {playerScore}</p>
-                <p className="text-xs text-white font-bold">{gameMode === 'pvp' ? 'P2' : 'AI'}: {opponentScore}</p>
-              </div>
-
-              <button
-                onClick={() => setStatus('start')}
-                className="mt-8 border-4 border-emerald-400 bg-black hover:bg-emerald-950 text-emerald-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#10b981] transition-all cursor-pointer w-full"
-              >
-                RETURN TO SETUP
-              </button>
-            </motion.div>
+          {status === 'combo-pending' && pendingCombo && (
+            <ComboUnlockScreen
+              comboName={pendingCombo.artifactA.id + '_' + pendingCombo.artifactB.id}
+              comboDescription={pendingCombo.bonusDescription}
+              artifactAName={pendingCombo.artifactA.name}
+              artifactAIcon={pendingCombo.artifactA.icon}
+              artifactAId={pendingCombo.artifactA.id}
+              artifactBName={pendingCombo.artifactB.name}
+              artifactBIcon={pendingCombo.artifactB.icon}
+              artifactBId={pendingCombo.artifactB.id}
+              bonusTag={pendingCombo.bonusTag}
+              gameMode={gameMode}
+              waitingForOpponent={false}
+              onProceed={() => {
+                setPendingCombo(null);
+                postComboActionRef.current?.();
+                postComboActionRef.current = null;
+              }}
+            />
           )}
 
-          {status === 'match-lost' && (
-            <motion.div
-              key="match-lost-screen"
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              className="text-center py-16 max-w-sm mx-auto select-none font-pixel animate-pulse"
-              id="match-lost-screen"
-            >
-              <div className="p-4 border-4 border-rose-500 bg-black inline-block mb-6 text-rose-500 text-4xl shadow-[4px_4px_0px_rgba(239,68,68,0.2)]">
-                <svg viewBox="0 0 24 24" className="w-10 h-10 text-rose-500 fill-current" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a9 9 0 0 0-9 9c0 3.35 1.84 6.29 4.58 7.86L7 21h10l-.58-2.14A9 9 0 0 0 12 2zm-3 9a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0zm6 0a1.5 1.5 0 1 1 3 0 1.5 1.5 0 0 1-3 0zM9 17v-1h2v1H9zm4 0v-1h2v1h-2z"/></svg>
-              </div>
-
-              <h1 className="text-lg font-bold text-white uppercase tracking-tight">RUN DEFEATED</h1>
-              <p className="text-zinc-[500] mt-2 text-[8px] uppercase">
-                THE DEFIANT FORCE CRUMBLED
-              </p>
-
-              <div className="mt-6 p-4 bg-zinc-950 border-2 border-zinc-850 text-left">
-                <span className="text-[7.5px] block uppercase text-zinc-500 mb-1">MATCH SCORECARD</span>
-                <p className="text-xs text-white font-bold mb-1">{gameMode === 'pvp' ? 'P1' : 'ALPHA'} (PLAYER): {playerScore}</p>
-                <p className="text-xs text-white font-bold">{gameMode === 'pvp' ? 'P2' : 'OPPOSITION'}: {opponentScore}</p>
-              </div>
-
-              <button
-                onClick={() => setStatus('start')}
-                className="mt-8 border-4 border-rose-500 bg-black hover:bg-rose-950 text-rose-500 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_rgba(239,68,68,0.4)] transition-all cursor-pointer w-full"
-              >
-                TRY AGAIN
-              </button>
-            </motion.div>
-          )}
+          {(status === 'match-won' || status === 'match-lost') && (
+            <GameEndScreen
+              result={status === 'match-won' ? 'won' : 'lost'}
+              gameMode={gameMode}
+              playerScore={playerScore}
+              opponentScore={opponentScore}
+              mpOppName={mpOppName}
+              matchTarget={matchTarget}
+              theme={theme}
+              aiDifficulty={aiDifficulty}
+              upgradePriority={upgradePriority}
+              onAiDifficultyChange={setAiDifficulty}
+              onUpgradePriorityChange={setUpgradePriority}
+              onMatchTargetChange={setMatchTarget}
+              onReturnToSetup={() => setStatus('start')}
+              onRematch={startNewMatch}
+            />
+          )}          
 
         </AnimatePresence>
       </main>

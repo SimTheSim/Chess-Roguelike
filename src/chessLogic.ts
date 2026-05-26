@@ -47,9 +47,6 @@ export function createInitialBoard(level: number, playerUpgrades: string[], oppo
     if (!board[5][1]) board[5][1] = createPiece('rook', 'white', 'w_extra_r1');
     else if (!board[5][6]) board[5][6] = createPiece('rook', 'white', 'w_extra_r2');
   }
-  if (playerUpgrades.includes('sacred-chalice')) {
-    board[6][3] = createPiece('rook', 'white', 'w_chalice_r');
-  }
 
   // Handle Opponent/AI custom reserve summons / modifications
   if (opponentUpgrades.includes('extra-knight')) {
@@ -59,9 +56,6 @@ export function createInitialBoard(level: number, playerUpgrades: string[], oppo
   if (opponentUpgrades.includes('extra-rook')) {
     if (!board[2][1]) board[2][1] = createPiece('rook', 'black', 'b_extra_r1');
     else if (!board[2][6]) board[2][6] = createPiece('rook', 'black', 'b_extra_r2');
-  }
-  if (opponentUpgrades.includes('sacred-chalice')) {
-    board[1][3] = createPiece('rook', 'black', 'b_chalice_r');
   }
 
   return board;
@@ -170,6 +164,10 @@ export function getValidMoves(
           moves.push({ r: doubleR, c: pos.c });
           if (upgrades.includes('pawn-triple') && tripleR >= 0 && tripleR < 8 && !board[tripleR][pos.c]) {
             moves.push({ r: tripleR, c: pos.c });
+            const quadR = pos.r + 4 * dir;
+            if (upgrades.includes('pawn-double') && quadR >= 0 && quadR < 8 && !board[quadR][pos.c]) {
+              moves.push({ r: quadR, c: pos.c });
+            }
           }
         }
       }
@@ -202,19 +200,17 @@ export function getValidMoves(
         if (nextR >= 0 && nextR < 8 && board[nextR][pos.c] && board[nextR][pos.c]!.color !== p.color) {
           moves.push({ r: nextR, c: pos.c });
         }
+        if (upgrades.includes('pawn-double')) {
+          const lungeR = pos.r + 2 * dir;
+          if (lungeR >= 0 && lungeR < 8 && board[lungeR][pos.c] && board[lungeR][pos.c]!.color !== p.color) {
+            moves.push({ r: lungeR, c: pos.c });
+          }
+        }
       }
       if (upgrades.includes('pawn-backstep')) {
         const backR = pos.r - dir;
         if (backR >= 0 && backR < 8 && !board[backR][pos.c]) {
           moves.push({ r: backR, c: pos.c });
-        }
-      }
-      if (upgrades.includes('pawn-sidestep')) {
-        const sideCols = [pos.c - 1, pos.c + 1];
-        for (const col of sideCols) {
-          if (col >= 0 && col < 8 && !board[pos.r][col]) {
-            moves.push({ r: pos.r, c: col });
-          }
         }
       }
     }
@@ -285,16 +281,14 @@ export function getValidMoves(
     for (const [dr, dc] of dirs) {
       addLine(dr, dc, 8, canHop, canPassFriendly);
     }
-    if (upgrades.includes('bishop-orthogonal')) {
+    const orthoRange = (upgrades.includes('bishop-orthogonal') && upgrades.includes('bishop-extended')) ? 3
+      : upgrades.includes('bishop-extended') ? 3
+      : upgrades.includes('bishop-orthogonal') ? 1
+      : 0;
+    if (orthoRange > 0) {
       const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
       for (const [dr, dc] of orthoDirs) {
-        addLine(dr, dc, 1);
-      }
-    }
-    if (upgrades.includes('bishop-extended')) {
-      const orthoDirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-      for (const [dr, dc] of orthoDirs) {
-        addLine(dr, dc, 3);
+        addLine(dr, dc, orthoRange);
       }
     }
   } else if (p.type === 'rook') {
@@ -303,16 +297,14 @@ export function getValidMoves(
     for (const [dr, dc] of dirs) {
       addLine(dr, dc, 8, canHop);
     }
-    if (upgrades.includes('rook-diagonal')) {
+    const diagRange = (upgrades.includes('rook-diagonal') && upgrades.includes('rook-diagonal-full')) ? 8
+      : upgrades.includes('rook-diagonal-full') ? 3
+      : upgrades.includes('rook-diagonal') ? 1
+      : 0;
+    if (diagRange > 0) {
       const diagDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
       for (const [dr, dc] of diagDirs) {
-        addLine(dr, dc, 1);
-      }
-    }
-    if (upgrades.includes('rook-diagonal-full')) {
-      const diagDirs = [[-1, -1], [-1, 1], [1, -1], [1, 1]];
-      for (const [dr, dc] of diagDirs) {
-        addLine(dr, dc, 3);
+        addLine(dr, dc, diagRange);
       }
     }
   } else if (p.type === 'queen') {
@@ -353,8 +345,9 @@ export function getValidMoves(
       }
     }
     if (upgrades.includes('king-blink')) {
-      const blinkMoves = [
-        [-2, 0], [2, 0], [0, -2], [0, 2]
+      const blinkDist = upgrades.includes('king-double-step') ? 3 : 2;
+      const blinkMoves: [number, number][] = [
+        [-blinkDist, 0], [blinkDist, 0], [0, -blinkDist], [0, blinkDist]
       ];
       for (const [dr, dc] of blinkMoves) {
         const blinkR = pos.r + dr;
@@ -411,22 +404,19 @@ export function getValidMoves(
 
     if (whiteKingPos) {
       let isGuarded = false;
-      const adjCoords = [
-        [-1, -1], [-1, 0], [-1, 1],
-        [0, -1],          [0, 1],
-        [1, -1],  [1, 0],  [1, 1]
-      ];
-      for (const [dr, dc] of adjCoords) {
-        const r = whiteKingPos.r + dr;
-        const c = whiteKingPos.c + dc;
-        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-          const adjPiece = board[r][c];
-          if (adjPiece && adjPiece.color === 'white' && adjPiece.type !== 'king') {
-            isGuarded = true;
-            break;
+      board[whiteKingPos.r][whiteKingPos.c]!.color = 'black';
+      for (let tr = 0; tr < 8 && !isGuarded; tr++) {
+        for (let tc = 0; tc < 8 && !isGuarded; tc++) {
+          const defender = board[tr][tc];
+          if (defender && defender.color === 'white' && defender.type !== 'king') {
+            const defMoves = getValidMoves(board, { r: tr, c: tc }, playerUpgrades, opponentUpgrades);
+            if (defMoves.some(m => m.r === whiteKingPos!.r && m.c === whiteKingPos!.c)) {
+              isGuarded = true;
+            }
           }
         }
       }
+      board[whiteKingPos.r][whiteKingPos.c]!.color = 'white';
       if (isGuarded) {
         return moves.filter(m => !(m.r === whiteKingPos!.r && m.c === whiteKingPos!.c));
       }
@@ -448,22 +438,19 @@ export function getValidMoves(
 
     if (blackKingPos) {
       let isGuarded = false;
-      const adjCoords = [
-        [-1, -1], [-1, 0], [-1, 1],
-        [0, -1],          [0, 1],
-        [1, -1],  [1, 0],  [1, 1]
-      ];
-      for (const [dr, dc] of adjCoords) {
-        const r = blackKingPos.r + dr;
-        const c = blackKingPos.c + dc;
-        if (r >= 0 && r < 8 && c >= 0 && c < 8) {
-          const adjPiece = board[r][c];
-          if (adjPiece && adjPiece.color === 'black' && adjPiece.type !== 'king') {
-            isGuarded = true;
-            break;
+      board[blackKingPos.r][blackKingPos.c]!.color = 'white';
+      for (let tr = 0; tr < 8 && !isGuarded; tr++) {
+        for (let tc = 0; tc < 8 && !isGuarded; tc++) {
+          const defender = board[tr][tc];
+          if (defender && defender.color === 'black' && defender.type !== 'king') {
+            const defMoves = getValidMoves(board, { r: tr, c: tc }, playerUpgrades, opponentUpgrades);
+            if (defMoves.some(m => m.r === blackKingPos!.r && m.c === blackKingPos!.c)) {
+              isGuarded = true;
+            }
           }
         }
       }
+      board[blackKingPos.r][blackKingPos.c]!.color = 'black';
       if (isGuarded) {
         return moves.filter(m => !(m.r === blackKingPos!.r && m.c === blackKingPos!.c));
       }
@@ -532,19 +519,6 @@ export function executeMove(
           hasMoved: true
         };
       }
-      if (upgrades.includes('castling-pawns')) {
-        const frontR = p.color === 'white' ? 6 : 1;
-        [5, 6, 7].forEach(col => {
-          if (!nextBoard[frontR][col]) {
-            nextBoard[frontR][col] = {
-              id: `${p.color}_retinue_${col}_${Date.now()}`,
-              type: 'pawn',
-              color: p.color,
-              hasMoved: true
-            };
-          }
-        });
-      }
       if (upgrades.includes('castling-explosion')) {
         const adj = [
           { r: r - 1, c: 5 }, { r: r - 1, c: 6 }, { r: r - 1, c: 7 },
@@ -578,19 +552,6 @@ export function executeMove(
           hasMoved: true
         };
       }
-      if (upgrades.includes('castling-pawns')) {
-        const frontR = p.color === 'white' ? 6 : 1;
-        [1, 2, 3].forEach(col => {
-          if (!nextBoard[frontR][col]) {
-            nextBoard[frontR][col] = {
-              id: `${p.color}_retinue_${col}_${Date.now()}`,
-              type: 'pawn',
-              color: p.color,
-              hasMoved: true
-            };
-          }
-        });
-      }
       if (upgrades.includes('castling-explosion')) {
         const adj = [
           { r: r - 1, c: 1 }, { r: r - 1, c: 2 }, { r: r - 1, c: 3 },
@@ -613,8 +574,8 @@ export function executeMove(
   const canPromote = (p.type === 'pawn') && (
     (p.color === 'white' && to.r === 0) ||
     (p.color === 'black' && to.r === 7) ||
-    (p.color === 'white' && upgrades.includes('promotion-halfway') && to.r <= 3) ||
-    (p.color === 'black' && upgrades.includes('promotion-halfway') && to.r >= 4)
+    (p.color === 'white' && upgrades.includes('promotion-halfway') && to.r <= 2) ||
+    (p.color === 'black' && upgrades.includes('promotion-halfway') && to.r >= 5)
   );
 
   if (canPromote) {

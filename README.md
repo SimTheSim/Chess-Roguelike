@@ -10,5 +10,7 @@
 
 
 TODO
-Add another game mode, where instead of only the loser picking, the loser picks first, and the winner picks within the remaining two options
-Art for fallback svgs
+Add more artifacts
+Add a chess clock
+Add public rooms
+Add permanence to rejoin a game (account ? cookie ?)
