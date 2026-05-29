@@ -11,10 +11,11 @@ import { Header } from './components/Header';
 import { StartScreen } from './components/StartScreen';
 import { DashboardLeft, DashboardRight } from './components/GameDashboard';
 
+
 function GameUI() {
   const {
     theme, setTheme, gameMode, setGameMode, status, setStatus,
-    mpColor, mpOppName, mpPlayerName,
+    mpColor, mpRoomCode, mpOppName, mpPlayerName,
     mpSocket, setMpSocket, setMpColor, setMpRoomCode, setMpOppName, setMpPlayerName,
     setMatchTarget, setUpgradePriority,
     roundCounter, matchTarget, playerScore, opponentScore,
@@ -27,7 +28,24 @@ function GameUI() {
     activeTab, setActiveTab,
     getTurnLabel, handleCellClick, startNewMatch, proceedToUpgradeFlow,
     handleUpgradeSelect, handleWinnerUpgradeSelect,
+    opponentTempDisconnected, disconnectCountdown, opponentLeft,
+    rematchProposal, rematchDeclined, setRematchProposal, setRematchDeclined
   } = useGame();
+
+  const handleProposeRematch = () => {
+    mpSocket?.emit('rematch_proposal', { code: mpRoomCode, matchTarget, upgradePriority });
+    setStatus('waiting-for-opponent-proceed');
+  };
+
+  const handleAcceptRematch = () => {
+    mpSocket?.emit('rematch_accept', { code: mpRoomCode, matchTarget: rematchProposal.matchTarget, upgradePriority: rematchProposal.upgradePriority });
+  };
+
+  const handleDeclineRematch = () => {
+    mpSocket?.emit('rematch_decline', { code: mpRoomCode });
+    setRematchProposal(null);
+    setRematchDeclined(true);
+  };
 
   return (
     <div className={`min-h-screen text-zinc-300 flex flex-col font-mono select-none transition-colors duration-300
@@ -37,6 +55,11 @@ function GameUI() {
     `} id="main-view">
 
       <Header/>
+      {opponentTempDisconnected && status !== 'start' && status !== 'lobby' && (
+        <div className="bg-rose-900 text-white text-center py-2 font-pixel text-[10px] tracking-wider border-b-4 border-rose-500 z-50 w-full">
+          {opponentLeft ? 'OPPONENT LEFT THE GAME' : 'OPPONENT LOST CONNECTION'} — WAITING {disconnectCountdown}S...
+        </div>
+      )}
 
       <main className="flex-1 max-w-6xl w-full mx-auto p-4 flex flex-col justify-center select-none" id="main-content">
         <AnimatePresence mode="wait">
@@ -90,8 +113,8 @@ function GameUI() {
                 <svg viewBox="0 0 24 24" className="w-8 h-8 text-yellow-400 fill-current" xmlns="http://www.w3.org/2000/svg"><polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/></svg>
               </div>
               <h2 className="text-sm font-bold text-white uppercase tracking-tight">
-                {roundWinner === 'white' && (gameMode === 'online' ? (mpColor === 'white' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : (gameMode === 'pvp' ? 'ROUND WON BY P1!' : 'ROUND WON BY ALPHA!'))}
-                {roundWinner === 'black' && (gameMode === 'online' ? (mpColor === 'black' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : (gameMode === 'pvp' ? 'ROUND WON BY P2!' : 'ROUND WON BY BETA!'))}
+                {roundWinner === 'white' && (gameMode === 'online' ? (mpColor === 'white' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : ('ROUND WON BY P1!'))}
+                {roundWinner === 'black' && (gameMode === 'online' ? (mpColor === 'black' ? 'ROUND WON BY YOU!' : `ROUND WON BY ${mpOppName.toUpperCase()}!`) : (gameMode === 'pvp' ? 'ROUND WON BY P2!' : 'ROUND WON BY AI!'))}
               </h2>
               <div className="mt-4 p-3 bg-zinc-950 border border-zinc-850 text-left">
                 <p className="text-[8px] text-zinc-400 leading-normal uppercase text-center font-pixel">CURRENT MATCH SCORE:</p>
@@ -176,9 +199,20 @@ function GameUI() {
               gameMode={gameMode} playerScore={playerScore} opponentScore={opponentScore}
               mpOppName={mpOppName} matchTarget={matchTarget} theme={theme}
               aiDifficulty={aiDifficulty} upgradePriority={upgradePriority}
-              onAiDifficultyChange={setAiDifficulty} onUpgradePriorityChange={setUpgradePriority}
-              onMatchTargetChange={setMatchTarget} onReturnToSetup={() => setStatus('start')}
-              onRematch={startNewMatch} playerColor={mpColor}
+              onAiDifficultyChange={setAiDifficulty} onUpgradePriorityChange={(val) => {
+                setUpgradePriority(val);
+                if (gameMode === 'online') mpSocket?.emit('room_settings_update', { code: mpRoomCode, matchTarget, upgradePriority: val });
+              }}
+              onMatchTargetChange={(val) => {
+                setMatchTarget(val);
+                if (gameMode === 'online') mpSocket?.emit('room_settings_update', { code: mpRoomCode, matchTarget: val, upgradePriority });
+              }} onReturnToSetup={() => { setStatus('start'); localStorage.removeItem('chess_room_code'); mpSocket?.disconnect(); }}
+              onProposeRematch={handleProposeRematch}
+              onAcceptRematch={handleAcceptRematch}
+              onDeclineRematch={handleDeclineRematch}
+              rematchProposal={rematchProposal}
+              rematchDeclined={rematchDeclined}
+              playerColor={mpColor}
             />
           )}
 

@@ -3,6 +3,8 @@ import { PieceIcon } from './PieceIcon';
 import { ALL_ARTIFACTS } from './artifactRegistry';
 import { Piece } from '../types';
 import { useGame } from '../GameContext';
+import { BoonIcon } from './BoonIcon';
+import { getActiveCombos } from './artifactRegistry';
 
 const BoonTooltipList = ({ boonIds, color }: { boonIds: string[]; color: 'emerald' | 'pink' }) => {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
@@ -20,6 +22,7 @@ const BoonTooltipList = ({ boonIds, color }: { boonIds: string[]; color: 'emeral
             onMouseEnter={() => setHoveredId(uid)}
             onMouseLeave={() => setHoveredId(null)}
           >
+            <BoonIcon iconName={orig.icon} upgradeId={orig.id} className={`w-3.5 h-3.5 flex-shrink-0 ${color === 'emerald' ? 'text-emerald-400' : 'text-pink-400'}`} />
             <span className={`text-[7.5px] truncate ${color === 'emerald' ? 'text-zinc-300' : 'text-pink-400'}`}>{orig.name}</span>
             {isHovered && (
               <div
@@ -33,6 +36,45 @@ const BoonTooltipList = ({ boonIds, color }: { boonIds: string[]; color: 'emeral
           </div>
         );
       })}
+    </div>
+  );
+};
+
+const ComboList = ({ upgrades }: { upgrades: string[] }) => {
+  const combos = getActiveCombos(upgrades);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
+  if (combos.length === 0) return null;
+  return (
+    <div className="border-t border-zinc-800 pt-3">
+      <p className="text-zinc-500 text-[8px] uppercase">SYNERGIES ({combos.length})</p>
+      <div className="space-y-1.5 mt-2">
+        {combos.map((combo) => {
+          const key = `${combo.artifactA.id}::${combo.artifactB.id}`;
+          return (
+            <div
+              key={key}
+              className="relative p-1.5 border border-purple-900 bg-purple-950/20 flex items-center gap-2 cursor-default"
+              onMouseEnter={() => setHoveredKey(key)}
+              onMouseLeave={() => setHoveredKey(null)}
+            >
+              <BoonIcon iconName={combo.artifactA.icon} upgradeId={combo.artifactA.id} className="w-3 h-3 flex-shrink-0 text-purple-400" />
+              <span className="text-purple-600 text-[7px]">+</span>
+              <BoonIcon iconName={combo.artifactB.icon} upgradeId={combo.artifactB.id} className="w-3 h-3 flex-shrink-0 text-purple-400" />
+              <span className="text-[7px] text-purple-300 truncate">{combo.bonusTag}</span>
+              {hoveredKey === key && (
+                <div
+                  className="fixed z-50 w-52 p-2 bg-zinc-900 border border-purple-700 text-[7.5px] text-zinc-300 leading-relaxed shadow-lg pointer-events-none"
+                  style={{ marginLeft: '210px' }}
+                >
+                  <p className="font-bold mb-1 text-purple-300">{combo.bonusTag}</p>
+                  <p className="text-zinc-400 mb-1">{combo.artifactA.name} + {combo.artifactB.name}</p>
+                  <p>{combo.bonusDescription}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
@@ -53,7 +95,7 @@ export const DashboardLeft = () => {
         <div className="flex justify-between items-center mt-3 bg-zinc-950 p-2.5 border-2 border-zinc-850">
           <div className="text-left">
             <p className="text-[7.5px] text-emerald-400 font-bold">
-              {gameMode === 'online' ? (mpColor === 'white' ? 'YOU (W)' : `${mpOppName.toUpperCase()} (W)`) : (gameMode === 'pvp' ? 'P1 (W)' : 'ALPHA (W)')}
+              {gameMode === 'online' ? (mpColor === 'white' ? 'YOU (W)' : `${mpOppName.toUpperCase()} (W)`) : ('P1 (W)')}
             </p>
             <p className="text-xl font-bold text-white">
               {gameMode === 'online' && mpColor === 'black' ? opponentScore : playerScore}
@@ -62,7 +104,7 @@ export const DashboardLeft = () => {
           <div className="text-zinc-650 text-[10px] font-bold">VS</div>
           <div className="text-right">
             <p className="text-[7.5px] text-pink-400 font-bold">
-              {gameMode === 'campaign' ? 'AI DREAD (B)' : gameMode === 'online' ? (mpColor === 'black' ? 'YOU (B)' : `${mpOppName.toUpperCase()} (B)`) : (gameMode === 'pvp' ? 'P2 (B)' : 'BETA (B)')}
+              {gameMode === 'campaign' ? 'AI (B)' : gameMode === 'online' ? (mpColor === 'black' ? 'YOU (B)' : `${mpOppName.toUpperCase()} (B)`) : (gameMode === 'pvp' ? 'P2 (B)' : 'AI (B)')}
             </p>
             <p className="text-xl font-bold text-white">
               {gameMode === 'online' && mpColor === 'black' ? playerScore : opponentScore}
@@ -74,7 +116,7 @@ export const DashboardLeft = () => {
 
       <div>
         <p className="text-zinc-500 text-[8px] uppercase">
-          {gameMode === 'online' ? (mpColor === 'white' ? 'YOUR BOONS' : `${mpOppName.toUpperCase()}'S BOONS`) : (gameMode === 'pvp' ? 'P1 BOONS' : 'ALPHA BOONS')} ({upgrades.length})
+          {gameMode === 'online' ? (mpColor === 'white' ? 'YOUR BOONS' : `${mpOppName.toUpperCase()}'S BOONS`) : ('P1 BOONS')} ({upgrades.length})
         </p>
         {upgrades.length === 0 ? (
           <p className="text-zinc-650 text-[8px] italic mt-1">NONE</p>
@@ -85,7 +127,7 @@ export const DashboardLeft = () => {
 
       <div className="border-t border-zinc-800 pt-3">
         <p className="text-zinc-500 text-[8px] uppercase">
-          {gameMode === 'campaign' ? 'AI DREAD BOONS' : gameMode === 'online' ? (mpColor === 'black' ? 'YOUR BOONS' : `${mpOppName.toUpperCase()}'S BOONS`) : (gameMode === 'pvp' ? 'P2 BOONS' : 'BETA BOONS')} ({opponentUpgrades.length})
+          {gameMode === 'campaign' ? 'AI BOONS' : gameMode === 'online' ? (mpColor === 'black' ? 'YOUR BOONS' : `${mpOppName.toUpperCase()}'S BOONS`) : (gameMode === 'pvp' ? 'P2 BOONS' : 'AI BOONS')} ({opponentUpgrades.length})
         </p>
         {opponentUpgrades.length === 0 ? (
           <p className="text-zinc-650 text-[8px] italic mt-1">NONE</p>
@@ -93,6 +135,8 @@ export const DashboardLeft = () => {
           <BoonTooltipList boonIds={opponentUpgrades} color="pink" />
         )}
       </div>
+
+      <ComboList upgrades={upgrades} />
     </aside>
   );
 };
@@ -126,7 +170,7 @@ export const DashboardRight = () => {
         <div className="space-y-2 text-zinc-400">
           <div className="p-2 bg-[#090909] border border-zinc-850">
             <span className="text-emerald-400 text-[7px] block uppercase mb-1">
-              {gameMode === 'online' ? (mpColor === 'white' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : (gameMode === 'pvp' ? 'P1' : 'ALPHA')} ELIMINATED:
+              {gameMode === 'online' ? (mpColor === 'white' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : ('P1')} ELIMINATED:
             </span>
             <div className="flex flex-wrap gap-1 mt-1 text-sm font-sans leading-none">
               {capturedByWhite.length === 0 ? (
@@ -142,7 +186,7 @@ export const DashboardRight = () => {
           </div>
           <div className="p-2 bg-[#090909] border border-zinc-850">
             <span className="text-rose-500 text-[7px] block uppercase mb-1">
-              {gameMode === 'online' ? (mpColor === 'black' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : (gameMode === 'pvp' ? 'P2' : 'AI DREAD')} ELIMINATED:
+              {gameMode === 'online' ? (mpColor === 'black' ? (mpPlayerName || 'YOU') : mpOppName).toUpperCase() : (gameMode === 'pvp' ? 'P2' : 'AI')} ELIMINATED:
             </span>
             <div className="flex flex-wrap gap-1 mt-1 text-sm font-sans leading-none">
               {capturedByBlack.length === 0 ? (

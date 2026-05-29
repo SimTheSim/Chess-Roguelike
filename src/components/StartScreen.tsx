@@ -26,7 +26,7 @@ export const StartScreen = () => {
       </div>
 
       <h1 className="text-2xl font-bold tracking-tight text-white uppercase font-pixel">
-        CHESS 2
+        NORMAL CHESS
       </h1>
 
       <div className="w-full mt-7 border-4 border-zinc-800 bg-black text-left">

@@ -7,12 +7,17 @@ export function useMultiplayer() {
   const [mpRoomCode, setMpRoomCode] = useState('');
   const [mpOppName, setMpOppName] = useState('');
   const [mpPlayerName, setMpPlayerName] = useState('');
-
+  const [opponentTempDisconnected, setOpponentTempDisconnected] = useState(false);
+  const [disconnectCountdown, setDisconnectCountdown] = useState(0);
+  const [opponentLeft, setOpponentLeft] = useState(false);
   return {
     mpSocket, setMpSocket,
     mpColor, setMpColor,
     mpRoomCode, setMpRoomCode,
     mpOppName, setMpOppName,
-    mpPlayerName, setMpPlayerName
+    mpPlayerName, setMpPlayerName,
+    opponentTempDisconnected, setOpponentTempDisconnected,
+    disconnectCountdown, setDisconnectCountdown,
+    opponentLeft, setOpponentLeft
   };
 }

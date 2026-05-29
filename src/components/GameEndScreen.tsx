@@ -15,7 +15,11 @@ interface GameEndScreenProps {
   onUpgradePriorityChange: (p: 'loser-only' | 'loser-then-winner') => void;
   onMatchTargetChange: (t: number) => void;
   onReturnToSetup: () => void;
-  onRematch: () => void;
+  onProposeRematch?: () => void;
+  onAcceptRematch?: () => void;
+  onDeclineRematch?: () => void;
+  rematchProposal?: any;
+  rematchDeclined?: boolean;
 }
 
 export const GameEndScreen: React.FC<GameEndScreenProps> = ({
@@ -31,7 +35,11 @@ export const GameEndScreen: React.FC<GameEndScreenProps> = ({
   onUpgradePriorityChange,
   onMatchTargetChange,
   onReturnToSetup,
-  onRematch,
+  onProposeRematch,
+  onAcceptRematch,
+  onDeclineRematch,
+  rematchProposal,
+  rematchDeclined,
   playerColor,
 }) => {
   const won = result === 'won';
@@ -71,7 +79,7 @@ export const GameEndScreen: React.FC<GameEndScreenProps> = ({
         <p className="text-xs text-white font-bold">{p2Label}: {opponentScore}</p>
       </div>
 
-      {gameMode === 'online' && playerColor == 'white' ? (
+      {gameMode === 'online' && playerColor === 'white' ? (
         <>
           <div className="mt-6 p-4 bg-zinc-950 border-2 border-zinc-850 text-left">
             <span className="text-[12px] block uppercase text-zinc-500 mb-3">REMATCH SETTINGS</span>
@@ -97,19 +105,19 @@ export const GameEndScreen: React.FC<GameEndScreenProps> = ({
               <div className="flex gap-2">
                 <button
                   onClick={() => onMatchTargetChange(3)}
-                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === '3' ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
+                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === 3 ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
                 >
                   3
                 </button>
                 <button
                   onClick={() => onMatchTargetChange(5)}
-                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === '5' ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
+                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === 5 ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
                 >
                   5
                 </button>
                 <button
                   onClick={() => onMatchTargetChange(7)}
-                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === '7' ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
+                  className={`flex-1 py-1.5 border-2 text-[7px] font-pixel cursor-pointer ${matchTarget === 7 ? 'bg-emerald-950 border-emerald-400 text-emerald-400' : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'}`}
                 >
                   7
                 </button>
@@ -118,10 +126,10 @@ export const GameEndScreen: React.FC<GameEndScreenProps> = ({
           </div>
           
           <button
-            onClick={onRematch}
+            onClick={onProposeRematch}
             className="mt-4 border-4 border-emerald-400 bg-black hover:bg-emerald-950 text-emerald-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#10b981] transition-all cursor-pointer w-full"
           >
-            REMATCH
+            PROPOSE REMATCH
           </button>
           <button
             onClick={onReturnToSetup}
@@ -130,18 +138,52 @@ export const GameEndScreen: React.FC<GameEndScreenProps> = ({
             RETURN TO SETUP
           </button>
         </>
-      ) : gameMode === 'online' ? (
-        <div>
-        <div>
-          <h1 className="text-l uppercase text-white block mb-1.5 mt-5">Waiting for opponent...</h1>
-        </div>
-        <button
-            onClick={onReturnToSetup}
-            className="mt-3 border-4 border-zinc-700 bg-black hover:bg-zinc-900 text-zinc-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#3f3f46] transition-all cursor-pointer w-full"
-          >
-            RETURN TO SETUP
-          </button>
-        </div>
+      ) : gameMode === 'online' && playerColor === 'black' ? (
+        <>
+        {rematchProposal ? (
+          <div className="mt-6">
+            <div className="p-4 bg-zinc-950 border-2 border-emerald-900 text-left mb-4">
+              <span className="text-[10px] block uppercase text-emerald-400 mb-2">REMATCH PROPOSED</span>
+              <p className="text-zinc-300 text-[8px] uppercase">FIRST TO {rematchProposal.matchTarget}</p>
+              <p className="text-zinc-300 text-[8px] uppercase mt-1">DRAFT: {rematchProposal.upgradePriority.replace('-', ' ')}</p>
+            </div>
+            <button
+              onClick={onAcceptRematch}
+              className="mt-2 border-4 border-emerald-400 bg-black hover:bg-emerald-950 text-emerald-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#10b981] transition-all cursor-pointer w-full"
+            >
+              ACCEPT REMATCH
+            </button>
+            <button
+              onClick={onDeclineRematch}
+              className="mt-3 border-4 border-rose-500 bg-black hover:bg-rose-950 text-rose-500 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#f43f5e] transition-all cursor-pointer w-full"
+            >
+              DECLINE
+            </button>
+          </div>
+        ) : rematchDeclined ? (
+          <div className="mt-6">
+            <div className="p-4 bg-rose-950 border-2 border-rose-900 text-center mb-4">
+              <span className="text-[10px] block uppercase text-rose-400">OPPONENT DECLINED</span>
+            </div>
+            <button
+              onClick={onReturnToSetup}
+              className="mt-3 border-4 border-zinc-700 bg-black hover:bg-zinc-900 text-zinc-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#3f3f46] transition-all cursor-pointer w-full"
+            >
+              RETURN TO SETUP
+            </button>
+          </div>
+        ) : (
+          <div className="mt-6">
+            <h1 className="text-l uppercase text-white block mb-6">Waiting for opponent...</h1>
+            <button
+                onClick={onReturnToSetup}
+                className="mt-3 border-4 border-zinc-700 bg-black hover:bg-zinc-900 text-zinc-400 text-xs uppercase py-3.5 px-8 shadow-[4px_4px_0px_#3f3f46] transition-all cursor-pointer w-full"
+              >
+                RETURN TO SETUP
+            </button>
+          </div>
+        )}
+        </>
       ) : (
         <button
           onClick={onReturnToSetup}

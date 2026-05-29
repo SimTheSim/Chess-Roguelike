@@ -6,6 +6,8 @@ import { useMultiplayerSync } from './components/MultiplayerLobby';
 import {createInitialBoard, getValidMoves, executeMove, getAIMove} from './chessLogic'
 import { getRandomArtifacts, getActiveCombos } from './components/artifactRegistry';
 import { Piece } from './types';
+import { getClientId } from './utils/clientId';
+import { io } from 'socket.io-client';
 
 export type GameStatus =
   | 'start'
@@ -102,6 +104,17 @@ interface GameContextValue {
   setComboOpponentProceeded: (v: boolean) => void;
   postComboActionRef: React.MutableRefObject<(() => void) | null>;
 
+  opponentTempDisconnected: boolean;
+  setOpponentTempDisconnected: (v: boolean) => void;
+  disconnectCountdown: number;
+  setDisconnectCountdown: (v: number) => void;
+  opponentLeft: boolean;
+  setOpponentLeft: (v: boolean) => void;
+  rematchProposal: any;
+  setRematchProposal: (v: any) => void;
+  rematchDeclined: boolean;
+  setRematchDeclined: (v: boolean) => void;
+
   syncState: (payload: any) => void;
   activeTab: 'setup' | 'settings';
   setActiveTab: (v: 'setup' | 'settings') => void;
@@ -133,7 +146,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     mpColor, setMpColor,
     mpRoomCode, setMpRoomCode,
     mpOppName, setMpOppName,
-    mpPlayerName, setMpPlayerName
+    mpPlayerName, setMpPlayerName,
+    opponentTempDisconnected, setOpponentTempDisconnected,
+    disconnectCountdown, setDisconnectCountdown,
+    opponentLeft, setOpponentLeft,
   } = useMultiplayer();
 
   const {
@@ -166,13 +182,147 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [oppProceeded, setOppProceeded] = useState(false);
   const [pendingCombo, setPendingCombo] = useState<{ artifactA: any; artifactB: any; bonusDescription: string; bonusTag: string } | null>(null);
   const [comboOpponentProceeded, setComboOpponentProceeded] = useState(false);
+  const [rematchDeclined, setRematchDeclined] = useState(false);
+  const [rematchProposal, setRematchProposal] = useState(false);
+  const reconnectAttempted = useRef(false);
+
+  useEffect(() => { mpColorRef.current = mpColor; }, [mpColor]);
+
+  useEffect(() => {
+    if (reconnectAttempted.current) return;
+    reconnectAttempted.current = true;
+    const storedRoom = localStorage.getItem('chess_room_code');
+    const clientId = getClientId();
+    if (storedRoom && !mpSocket) {
+      const newSocket = io(import.meta.env.VITE_MULTIPLAYER_SERVER ?? 'http://localhost:3001');
+      newSocket.emit('reconnect_to_room', { code: storedRoom, clientId }, (res: any) => {
+        if (res.ok) {
+          setMpSocket(newSocket);
+          setMpRoomCode(res.code);
+          setMpColor(res.color);
+          mpColorRef.current = res.color;
+          setMatchTarget(res.room.matchTarget);
+          setUpgradePriority(res.room.upgradePriority);
+          const oppName = res.room.playerNames[res.color === 'white' ? 'black' : 'white'] || 'Opponent';
+          setMpOppName(oppName);
+          setGameMode('online');
+          if (res.gameState) {
+            handleRemoteState(res.gameState);
+          } else if (res.room.players.white && res.room.players.black) {
+            startNewMatch();
+          } else {
+            setStatus('waiting-for-opponent-proceed');
+          }
+        } else {
+          newSocket.disconnect();
+          localStorage.removeItem('chess_room_code');
+        }
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!mpSocket) return;
+
+    const onTempDisconnect = ({ timeout }: { timeout: number }) => {
+      setOpponentTempDisconnected(true);
+      setDisconnectCountdown(timeout);
+    };
+    const onOpponentLeft = () => {
+      setOpponentLeft(true);
+      setOpponentTempDisconnected(true);
+      setDisconnectCountdown(3);
+    };
+    const onReconnect = () => {
+      setOpponentTempDisconnected(false);
+      setDisconnectCountdown(0);
+      const s = upgradeStateRef.current;
+      if (upgradeStatuses.includes(s.status) && s.status !== 'waiting-for-opponent-upgrade' && s.status !== 'waiting-for-opponent-proceed') {
+        syncStateRef.current({
+          board: s.board, turn: s.turn, roundStartColor: s.roundStartColor,
+          upgrades: s.upgrades, opponentUpgrades: s.opponentUpgrades,
+          enPassantTarget: s.enPassantTarget, capturedByWhite: s.capturedByWhite,
+          capturedByBlack: s.capturedByBlack, moveHistory: s.moveHistory,
+          playerScore: s.opponentScore, opponentScore: s.playerScore,
+          status: s.status, roundCounter: s.roundCounter,
+          upgradeChoices: s.upgradeChoices, loserChosenId: s.loserChosenId,
+          roundWinner: s.roundWinner,
+        });
+      }
+    };
+    const onSettingsUpdate = ({ matchTarget: mt, upgradePriority: up }: any) => {
+      setMatchTarget(mt);
+      setUpgradePriority(up);
+    };
+    const onProposal = (data: any) => {
+      setRematchProposal(data);
+    };
+    const onDecline = () => {
+      setRematchDeclined(true);
+    };
+    const onRematchStart = ({ matchTarget: mt, upgradePriority: up }: any) => {
+      setMatchTarget(mt);
+      setUpgradePriority(up);
+      setRematchProposal(null);
+      setRematchDeclined(false);
+      startNewMatch();
+    };
+
+    mpSocket.on('opponent_temporarily_disconnected', onTempDisconnect);
+    mpSocket.on('opponent_reconnected', onReconnect);
+    mpSocket.on('room_settings_update', onSettingsUpdate);
+    mpSocket.on('rematch_proposal', onProposal);
+    mpSocket.on('rematch_decline', onDecline);
+    mpSocket.on('rematch_start', onRematchStart);
+    mpSocket.on('opponent_left', onOpponentLeft);
+
+    return () => {
+      mpSocket.off('opponent_temporarily_disconnected', onTempDisconnect);
+      mpSocket.off('opponent_reconnected', onReconnect);
+      mpSocket.off('room_settings_update', onSettingsUpdate);
+      mpSocket.off('rematch_proposal', onProposal);
+      mpSocket.off('rematch_decline', onDecline);
+      mpSocket.off('rematch_start', onRematchStart);
+      mpSocket.off('opponent_left', onOpponentLeft);
+    };
+  }, [mpSocket]);
+
+  const upgradeStatuses: GameStatus[] = [
+      'round-end-notifying', 'upgrading-white', 'upgrading-black',
+      'upgrading-winner-white', 'upgrading-winner-black',
+      'waiting-for-opponent-upgrade', 'waiting-for-opponent-proceed', 'combo-pending'
+    ];
+
+  useEffect(() => {
+    if (opponentTempDisconnected && disconnectCountdown > 0) {
+      if (gameMode === 'online' && upgradeStatuses.includes(status)) return;
+      const timer = setTimeout(() => setDisconnectCountdown(disconnectCountdown - 1), 1000);
+      return () => clearTimeout(timer);
+    } else if (opponentTempDisconnected && disconnectCountdown === 0) {
+      if (gameMode === 'online' && upgradeStatuses.includes(status)) return;
+      setStatus('start');
+      setMpRoomCode('');
+      localStorage.removeItem('chess_room_code');
+      mpSocket?.disconnect();
+      setOpponentTempDisconnected(false);
+      setOpponentLeft(false);
+    }
+  }, [opponentTempDisconnected, disconnectCountdown, status, gameMode]);
+
   const postComboActionRef = useRef<(() => void) | null>(null);
   const roundEndingRef = useRef(false);
+  const mpColorRef = useRef<'white' | 'black'>('white');
+  const syncStateRef = useRef<(payload: any) => void>(() => {});
 
   const stateRef = useRef({ playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority });
   useEffect(() => {
     stateRef.current = { playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority };
   }, [playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority]);
+
+  const upgradeStateRef = useRef({ status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter });
+  useEffect(() => {
+    upgradeStateRef.current = { status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter };
+  }, [status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter]);
 
   const handleRemoteState = useCallback((state: any) => {
     if (!state) return;
@@ -191,6 +341,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (data.roundStartColor) setRoundStartColor(data.roundStartColor);
     if (data.upgradeChoices) setUpgradeChoices(data.upgradeChoices);
     if (data.loserChosenId !== undefined) setLoserChosenId(data.loserChosenId);
+    if (data.roundWinner !== undefined) setRoundWinner(data.roundWinner);
     if (data.proceeded !== undefined) setOppProceeded(data.proceeded);
     if (data.comboProceed !== undefined) setComboOpponentProceeded(data.comboProceed);
     if (data.roundOver) {
@@ -203,8 +354,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
       return;
     }
     if (data.status) {
+      if (data.status === 'upgrading-white' || data.status === 'upgrading-black') {
+        const loserColor = data.status === 'upgrading-white' ? 'white' : 'black';
+        if (mpColorRef.current !== loserColor) {
+          setStatus('waiting-for-opponent-upgrade');
+          return;
+        }
+      }
       if (data.status === 'upgrading-winner-white' || data.status === 'upgrading-winner-black') {
         if (data.winnerChoices) setUpgradeChoices(data.winnerChoices);
+        const winnerColor = data.status === 'upgrading-winner-white' ? 'white' : 'black';
+        if (mpColorRef.current !== winnerColor) {
+          setStatus('waiting-for-opponent-upgrade');
+          return;
+        }
       }
       if (data.status === 'combo-pending-loser') {
         roundEndingRef.current = false;
@@ -230,6 +393,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     myColor: mpColor,
     onRemoteState: handleRemoteState,
   });
+
+  useEffect(() => { syncStateRef.current = syncState; }, [syncState]);
 
   const setupNextRound = (stageLvl: number, whiteBoons: string[], blackBoons: string[], startColor: 'white' | 'black') => {
     roundEndingRef.current = false;
@@ -355,7 +520,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const loserColor = roundWinner === 'white' ? 'black' : 'white';
       const isLoser = mpColor === loserColor;
       if (isLoser) {
-        setStatus(mpColor === 'white' ? 'upgrading-white' : 'upgrading-black');
+        const nextStatus = mpColor === 'white' ? 'upgrading-white' : 'upgrading-black';
+        setStatus(nextStatus);
+        syncState({ status: nextStatus, upgradeChoices, roundWinner });
       } else {
         setStatus('waiting-for-opponent-upgrade');
       }
@@ -404,7 +571,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
       if (gameMode === 'campaign') {
         const remaining = upgradeChoices.filter(u => u.id !== upgradeId);
         if (remaining.length > 0) {
-          nextBlackUpgrades.push(remaining.id);
+          nextBlackUpgrades.push(remaining[0].id);
           setOpponentUpgrades(nextBlackUpgrades);
         }
         const nextLvl = level + 1;
@@ -427,28 +594,30 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
         const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
         const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+        const winnerChoices = upgradeChoices.filter(u => u.id !== upgradeId);
         const syncPayload = {
           upgrades: playerSide === 'white' ? nextWhiteUpgrades : upgrades,
           opponentUpgrades: playerSide === 'black' ? nextBlackUpgrades : opponentUpgrades,
           status: winnerSide === 'white' ? 'upgrading-winner-white' : 'upgrading-winner-black',
-          winnerChoices: upgradeChoices.filter(u => u.id !== upgradeId),
+          winnerChoices,
           loserChosenId: upgradeId,
         };
         if (newCombo) {
           setPendingCombo(newCombo);
           setStatus('combo-pending');
           postComboActionRef.current = () => {
-            setUpgradeChoices(upgradeChoices);
+            setUpgradeChoices(winnerChoices);
             setLoserChosenId(upgradeId);
             setStatus('waiting-for-opponent-upgrade');
           };
           syncState(syncPayload);
         } else {
           syncState(syncPayload);
-          setUpgradeChoices(upgradeChoices);
+          setUpgradeChoices(winnerChoices);
           setLoserChosenId(upgradeId);
           setStatus('waiting-for-opponent-upgrade');
         }
+        
         return;
       }
       const nextLvl = 1;
@@ -458,6 +627,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
       const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
       const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+      const currentPlayerScore = stateRef.current.playerScore;
+      const currentOpponentScore = stateRef.current.opponentScore;
       if (newCombo) {
         setPendingCombo(newCombo);
         setStatus('combo-pending');
@@ -468,7 +639,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
             upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
             enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
-            moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+            moveHistory: [], playerScore: currentOpponentScore, opponentScore: currentPlayerScore,
             status: 'playing', roundCounter: nextRound, loserChosenId: null
           });
         };
@@ -480,7 +651,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
           upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
           enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
-          moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+          moveHistory: [], playerScore: currentOpponentScore, opponentScore: currentPlayerScore,
           status: 'playing', roundCounter: nextRound, loserChosenId: null
         });
       }
@@ -518,6 +689,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const prevBoons = playerSide === 'white' ? upgrades : opponentUpgrades;
       const nextBoons = playerSide === 'white' ? nextWhiteUpgrades : nextBlackUpgrades;
       const newCombo = getActiveCombos(nextBoons).find(c => !getActiveCombos(prevBoons).some(p => p.artifactA.id === c.artifactA.id && p.artifactB.id === c.artifactB.id));
+      const currentPlayerScore = stateRef.current.playerScore;
+      const currentOpponentScore = stateRef.current.opponentScore;
       if (newCombo) {
         setPendingCombo(newCombo);
         setStatus('combo-pending');
@@ -528,7 +701,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
             board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
             upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
             enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
-            moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+            moveHistory: [], playerScore: currentOpponentScore, opponentScore: currentPlayerScore,
             status: 'playing', roundCounter: nextRound, loserChosenId: null
           });
         };
@@ -540,7 +713,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
           board: newBoard, turn: nextStartColor, roundStartColor: nextStartColor,
           upgrades: nextWhiteUpgrades, opponentUpgrades: nextBlackUpgrades,
           enPassantTarget: null, capturedByWhite: [], capturedByBlack: [],
-          moveHistory: [], playerScore: opponentScore, opponentScore: playerScore,
+          moveHistory: [], playerScore: currentOpponentScore, opponentScore: currentPlayerScore,
           status: 'playing', roundCounter: nextRound, loserChosenId: null
         });
       }
@@ -679,8 +852,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
       const colorLabel = turn === 'white' ? '(W)' : '(B)';
       return isMyTurn ? `YOUR TURN ${colorLabel}` : `${mpOppName.toUpperCase()}'S TURN ${colorLabel}`;
     }
-    if (gameMode === 'campaign') return turn === 'white' ? 'ALPHA (W) TURN' : 'AI SYSTEM THINKING (B)';
-    return turn === 'white' ? (gameMode === 'pvp' ? 'P1 (W) TURN' : 'ALPHA (W) TURN') : (gameMode === 'pvp' ? 'P2 (B) TURN' : 'BETA (B) TURN');
+    if (gameMode === 'campaign') return turn === 'white' ? 'P1 (W) TURN' : 'AI THINKING (B)';
+    return turn === 'white' ? ('P1 (W) TURN') : (gameMode === 'pvp' ? 'P2 (B) TURN' : 'AI (B) TURN');
   };
 
   const value: GameContextValue = {
@@ -703,6 +876,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     syncState, activeTab, setActiveTab,
     getTurnLabel, handleCellClick, startNewMatch, proceedToUpgradeFlow,
     handleUpgradeSelect, handleWinnerUpgradeSelect, endRound, handleRemoteState,
+    opponentTempDisconnected, setOpponentTempDisconnected, disconnectCountdown,
+    setDisconnectCountdown, opponentLeft, setOpponentLeft, rematchProposal, setRematchProposal,
+    rematchDeclined, setRematchDeclined
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

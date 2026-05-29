@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion, AnimatePresence } from 'motion/react';
+import { getClientId, getStoredPlayerName, setStoredPlayerName } from '../utils/clientId';
 
 const SERVER_URL = import.meta.env.VITE_MULTIPLAYER_SERVER ?? 'http://localhost:3001';
 
@@ -19,12 +20,14 @@ interface MultiplayerLobbyProps {
   onBack: () => void;
 }
 
-type LobbyView = 'menu' | 'create' | 'join' | 'waiting';
+type LobbyView = 'menu' | 'create' | 'join' | 'waiting' | 'browse';
 
 export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
   const [view, setView] = useState<LobbyView>('menu');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(getStoredPlayerName());
   const [joinCode, setJoinCode] = useState('');
+  const [isPublic, setIsPublic] = useState(false);
+  const [publicRooms, setPublicRooms] = useState<any[]>([]);
   const [roomCode, setRoomCode] = useState('');
   const [myColor, setMyColor] = useState<'white' | 'black'>('white');
   const [opponentName, setOpponentName] = useState('');
@@ -54,16 +57,18 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
 
   const handleCreate = () => {
     if (!playerName.trim()) { setError('Enter your name first.'); return; }
+    setStoredPlayerName(playerName.trim());
     setError('');
     setConnecting(true);
     const socket = getSocket();
 
-    socket.emit('create_room', { playerName: playerName.trim(), matchTarget, upgradePriority }, (res: any) => {
+    socket.emit('create_room', { playerName: playerName.trim(), matchTarget, upgradePriority, clientId: getClientId(), isPublic }, (res: any) => {
       setConnecting(false);
       if (!res.ok) { setError(res.error ?? 'Server error.'); return; }
       setRoomCode(res.code);
       setMyColor('white');
       setView('waiting');
+      localStorage.setItem('chess_room_code', res.code);
 
       socket.on('opponent_joined', ({ playerName: name }) => {
         setOpponentName(name);
@@ -75,21 +80,23 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     });
   };
 
-  const handleJoin = () => {
+  const handleJoin = (codeToJoin = joinCode) => {
     if (!playerName.trim()) { setError('Enter your name first.'); return; }
-    if (!joinCode.trim()) { setError('Enter a room code.'); return; }
+    if (!codeToJoin.trim()) { setError('Enter a room code.'); return; }
+    setStoredPlayerName(playerName.trim());
     setError('');
     setConnecting(true);
     const socket = getSocket();
 
     socket.emit(
       'join_room',
-      { code: joinCode.trim().toUpperCase(), playerName: playerName.trim() },
+      { code: codeToJoin.trim().toUpperCase(), playerName: playerName.trim(), clientId: getClientId() },
       (res: any) => {
         setConnecting(false);
         if (!res.ok) { setError(res.error ?? 'Could not join room.'); return; }
         setRoomCode(res.code);
         setMyColor(res.color);
+        localStorage.setItem('chess_room_code', res.code);
         const oppName = res.room.playerNames[res.color === 'white' ? 'black' : 'white'] ?? 'Opponent';
         handedOffRef.current = true;
         const roomMatchTarget = res.room.matchTarget ?? 5;
@@ -117,13 +124,24 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     }
   };
 
-  const navigateTo = (dest: 'create' | 'join') => {
+  const navigateTo = (dest: 'create' | 'join' | 'browse') => {
     if (!playerName.trim()) {
       setError('Enter your name before continuing.');
       return;
     }
+    setStoredPlayerName(playerName.trim());
     setError('');
     setView(dest);
+
+    if (dest === 'browse') {
+      const socket = getSocket();
+      socket.emit('list_rooms', (res: any) => {
+        if (res.ok) setPublicRooms(res.rooms);
+      });
+      socket.on('rooms_updated', (rooms: any[]) => {
+        setPublicRooms(rooms);
+      });
+    }
   };
 
   return (
@@ -188,6 +206,12 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                   className="border-4 border-zinc-600 bg-black hover:bg-zinc-900 text-zinc-300 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#52525b] hover:shadow-[2px_2px_0px_#52525b] hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-pointer"
                 >
                   Join by Code
+                </button>
+                <button
+                  onClick={() => navigateTo('browse')}
+                  className="border-4 border-blue-500 bg-black hover:bg-blue-950 text-blue-400 text-[8px] uppercase py-3 tracking-wider shadow-[4px_4px_0px_#3b82f6] hover:shadow-[2px_2px_0px_#3b82f6] hover:translate-x-[2px] hover:translate-y-[2px] transition-all cursor-pointer"
+                >
+                  Browse Open Rooms
                 </button>
               </div>
 
@@ -255,6 +279,30 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                     }`}
                   >
                     LOSER THEN WINNER
+                  </button>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2 text-center">ROOM VISIBILITY</span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setIsPublic(false)}
+                    className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${!isPublic
+                      ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
+                      : 'bg-black border-zinc-800 text-zinc-500'
+                    }`}
+                  >
+                    PRIVATE
+                  </button>
+                  <button
+                    onClick={() => setIsPublic(true)}
+                    className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${isPublic
+                      ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold'
+                      : 'bg-black border-zinc-800 text-zinc-500'
+                    }`}
+                  >
+                    PUBLIC
                   </button>
                 </div>
               </div>
@@ -431,6 +479,48 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                 className="mt-8 w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
               >
                 Cancel
+              </button>
+            </div>
+          </motion.div>
+        )}
+        
+        {view === 'browse' && (
+          <motion.div
+            key="browse"
+            initial={{ opacity: 0, x: 30 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -30 }}
+            className="w-full max-w-sm"
+          >
+            <div className="border-4 border-blue-500 bg-zinc-950 p-8 shadow-[8px_8px_0px_#3b82f6]">
+              <div className="text-center mb-8">
+                <h2 className="text-white text-xs uppercase tracking-tight">Public Rooms</h2>
+              </div>
+              <div className="flex flex-col gap-3 mb-6 max-h-[300px] overflow-y-auto pr-2">
+                {publicRooms.length === 0 ? (
+                  <p className="text-zinc-500 text-[8px] uppercase text-center py-4">No open rooms found.</p>
+                ) : (
+                  publicRooms.map((room) => (
+                    <div key={room.code} className="border-2 border-zinc-700 bg-black p-3 flex justify-between items-center">
+                      <div>
+                        <div className="text-white text-[9px] uppercase">{room.playerNames.white}'s Game</div>
+                        <div className="text-zinc-500 text-[7px] uppercase mt-1">First to {room.matchTarget} • {room.upgradePriority.replace('-', ' ')}</div>
+                      </div>
+                      <button
+                        onClick={() => handleJoin(room.code)}
+                        className="bg-blue-950 border border-blue-500 text-blue-400 text-[7px] px-3 py-1.5 uppercase cursor-pointer hover:bg-blue-900"
+                      >
+                        JOIN
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+              <button
+                onClick={() => { setView('menu'); socketRef.current?.off('rooms_updated'); }}
+                className="w-full text-zinc-700 hover:text-zinc-400 text-[7px] uppercase tracking-wider transition-colors cursor-pointer"
+              >
+                Back
               </button>
             </div>
           </motion.div>
