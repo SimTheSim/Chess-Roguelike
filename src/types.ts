@@ -6,6 +6,7 @@ export interface Piece {
   type: PieceType;
   color: PieceColor;
   hasMoved: boolean;
+  startPos?: { r: number; c: number }
 }
 
 export type Board = (Piece | null)[][];

@@ -14,6 +14,8 @@ interface ChessBoardProps {
   theme: 'classic' | 'retro-green' | 'retro-cyber';
   crumblingColor: 'white' | 'black' | null;
   flipped?: boolean;
+  hiddenKingColor?: 'white' | 'black' | null;
+  flameSquares?: Position[];
 }
 
 export const ChessBoard: React.FC<ChessBoardProps> = ({
@@ -27,6 +29,8 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
   theme,
   crumblingColor,
   flipped = false,
+  hiddenKingColor = null,
+  flameSquares
 }) => {
   const isSelected = (r: number, c: number) =>
     selectedPos !== null && selectedPos.r === r && selectedPos.c === c;
@@ -36,6 +40,9 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
 
   const isExploded = (r: number, c: number) =>
     explodedCells.some(e => e.r === r && e.c === c);
+
+  const isAblaze = (r: number, c: number) =>
+    flameSquares.some(e => e.r === r && e.c === c);
 
   // Set borders and board layout outlines depending on theme
   let boardBorderClass = 'border-4 border-zinc-800 bg-black shadow-[8px_8px_0px_#27272a]';
@@ -58,9 +65,11 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
         {(flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7]).map(r =>
           (flipped ? [7,6,5,4,3,2,1,0] : [0,1,2,3,4,5,6,7]).map(c => {
             const piece = board[r][c];
+            const displayPiece = (hiddenKingColor && piece?.type === 'king' && piece?.color === hiddenKingColor) ? null : piece;
             const selected = isSelected(r, c);
             const valid = isValidMove(r, c);
             const exploded = isExploded(r, c);
+            const ablaze = isAblaze(r, c);
             const isDarkSquare = (r + c) % 2 === 1;
 
             // Compute the beautiful 2-color checkerboard backgrounds per theme
@@ -92,7 +101,7 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
               >
                 <div className="w-[82%] h-[82%] relative z-10 flex items-center justify-center select-none">
                   <AnimatePresence mode = "wait">
-                    {piece && (
+                    {displayPiece && (
                       <motion.div
                         key={piece.id}
                         initial={{ scale: 0.8, opacity: 0 }}
@@ -102,30 +111,34 @@ export const ChessBoard: React.FC<ChessBoardProps> = ({
                         className="absolute inset-0 w-full h-full flex items-center justify-center select-none"
                       >
                         <ChessPiece
-                          type={piece.type}
-                          color={piece.color}
-                          activeBoons={piece.color === 'white' ? playerUpgrades : opponentUpgrades}
+                          type={displayPiece.type}
+                          color={displayPiece.color}
+                          activeBoons={displayPiece.color === 'white' ? playerUpgrades : opponentUpgrades}
                           theme={theme}
-                          isCrumbling={piece.color === crumblingColor}
+                          isCrumbling={displayPiece.color === crumblingColor}
                         />
                       </motion.div>
                     )}
                   </AnimatePresence>
                 </div>
 
-                {/* 2. Absolute Centered Pixelated Move Suggestion Dot */}
-                {valid && !piece && (
+                {valid && !displayPiece && (
                   <div className={`absolute w-3.5 h-3.5 border border-black animate-pulse shadow-[2px_2px_0px_rgba(0,0,0,0.5)] z-20 ${validDotClass}`} />
                 )}
 
-                {/* 3. Absolute Centered Pixelated Capture Highlight */}
-                {valid && piece && (
+                {valid && displayPiece && (
                   <div className="absolute inset-1.5 border-2 border-dashed border-rose-500 z-20 pointer-events-none animate-pulse" />
                 )}
 
-                {/* 4. Absolute Block Explosion Overlay */}
                 {exploded && (
                   <div className="absolute inset-0 bg-red-600 animate-ping pointer-events-none z-30" />
+                )}
+
+                {ablaze && (
+                  <div className="absolute inset-0 flex items-center justify-center z-40 pointer-events-none">
+                    <div className="absolute w-3/5 h-1.5 bg-red-600 rotate-45"></div>
+                    <div className="absolute w-3/5 h-1.5 bg-red-600 -rotate-45"></div>
+                  </div>
                 )}
               </div>
             );

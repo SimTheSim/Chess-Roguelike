@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { PieceType, PieceColor } from '../types';
-import { getArtifactOverlay } from './artifactRegistry';
+import { getArtifactOverlay , getArtifactType} from './artifactRegistry';
 
 interface ChessPieceProps {
   type: PieceType;
@@ -147,7 +147,7 @@ export const ChessPiece: React.FC<ChessPieceProps> = ({
     .replace(/STROKE/g, strokeMain);
 
   const activeBoonOverlays = activeBoons.filter((id) => {
-    if (!id.startsWith(type)) return false;
+    if (getArtifactType(id) !== type) return false;
     return getArtifactOverlay(id) !== null;
   });
 

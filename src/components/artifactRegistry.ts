@@ -22,6 +22,10 @@ export function getArtifactOverlay(id: string): string | null {
   return byId.get(id)?.pieceOverlaySvg ?? null;
 }
 
+export function getArtifactType(id: string): string | null {
+  return byId.get(id)?.pieceFamily ?? null;
+}
+
 export interface ResolvedCombo {
   artifactA: ArtifactDefinition;
   artifactB: ArtifactDefinition;

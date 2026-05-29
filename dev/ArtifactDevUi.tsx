@@ -2,12 +2,6 @@ import React, { useState, useMemo } from 'react';
 import { ALL_ARTIFACTS } from './components/artifactRegistry';
 import type { ArtifactDefinition, ArtifactCombo, ArtifactRarity, ArtifactFamily } from './components/artifactRegistry';
 
-const RARITY_COLORS: Record<string, string> = {
-  common: 'border-slate-500 bg-slate-900/60',
-  rare: 'border-blue-500 bg-blue-950/60',
-  epic: 'border-purple-500 bg-purple-950/60',
-};
-
 const FAMILY_OPTIONS: ArtifactFamily[] = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king', 'general'];
 const RARITY_OPTIONS: ArtifactRarity[] = ['common', 'rare', 'epic'];
 
@@ -24,31 +18,85 @@ function ArtifactIcon({ svg, viewBox, size = 40 }: { svg: string; viewBox: strin
   );
 }
 
+function syncCombos(prev: ArtifactDefinition[], updated: ArtifactDefinition, originalId: string): ArtifactDefinition[] {
+  let next = prev.map(a => (a.id === originalId ? updated : a));
+
+  const previousVersion = prev.find(a => a.id === originalId);
+  const previousComboIds = new Set((previousVersion?.combos ?? []).map(c => c.withId));
+
+  for (const combo of updated.combos) {
+    if (!combo.withId) continue;
+
+    const targetIdx = next.findIndex(a => a.id === combo.withId);
+    if (targetIdx === -1) continue;
+
+    const target = next[targetIdx];
+    const alreadyHasMirror = target.combos.some(c => c.withId === updated.id);
+
+    if (!alreadyHasMirror) {
+      next = next.map((a, i) =>
+        i === targetIdx
+          ? { ...a, combos: [...a.combos, { withId: updated.id, bonusDescription: combo.bonusDescription, bonusTag: combo.bonusTag }] }
+          : a
+      );
+    } else {
+      next = next.map((a, i) =>
+        i === targetIdx
+          ? {
+              ...a,
+              combos: a.combos.map(c =>
+                c.withId === updated.id
+                  ? { ...c, bonusDescription: combo.bonusDescription, bonusTag: combo.bonusTag }
+                  : c
+              ),
+            }
+          : a
+      );
+    }
+  }
+
+  for (const oldComboId of previousComboIds) {
+    const stillExists = updated.combos.some(c => c.withId === oldComboId);
+    if (!stillExists) {
+      const targetIdx = next.findIndex(a => a.id === oldComboId);
+      if (targetIdx !== -1) {
+        next = next.map((a, i) =>
+          i === targetIdx
+            ? { ...a, combos: a.combos.filter(c => c.withId !== updated.id) }
+            : a
+        );
+      }
+    }
+  }
+
+  return next;
+}
+
 export default function ArtifactDevUI() {
   const [artifacts, setArtifacts] = useState<ArtifactDefinition[]>([...ALL_ARTIFACTS]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const editingArtifact = useMemo(() => 
+  const editingArtifact = useMemo(() =>
     artifacts.find(a => a.id === editingId) || null
   , [artifacts, editingId]);
 
   const filteredArtifacts = useMemo(() => {
-    return artifacts.filter(a => 
-      a.name.toLowerCase().includes(search.toLowerCase()) || 
+    return artifacts.filter(a =>
+      a.name.toLowerCase().includes(search.toLowerCase()) ||
       a.id.toLowerCase().includes(search.toLowerCase())
     );
   }, [artifacts, search]);
 
-  const handleSave = (updated: ArtifactDefinition) => {
+  const handleSave = (updated: ArtifactDefinition, originalId: string) => {
     setArtifacts(prev => {
       const exists = prev.find(a => a.id === updated.id);
-      if (exists && editingId !== updated.id) {
+      if (exists && originalId !== updated.id) {
         alert("ID already exists!");
         return prev;
       }
-      if (editingId && prev.find(a => a.id === editingId)) {
-        return prev.map(a => a.id === editingId ? updated : a);
+      if (originalId && prev.find(a => a.id === originalId)) {
+        return syncCombos(prev, updated, originalId);
       }
       return [...prev, updated];
     });
@@ -73,7 +121,13 @@ export default function ArtifactDevUI() {
 
   const deleteArtifact = (id: string) => {
     if (confirm('Delete this artifact?')) {
-      setArtifacts(artifacts.filter(a => a.id !== id));
+      setArtifacts(prev => {
+        const withoutDeleted = prev.filter(a => a.id !== id);
+        return withoutDeleted.map(a => ({
+          ...a,
+          combos: a.combos.filter(c => c.withId !== id),
+        }));
+      });
       if (editingId === id) setEditingId(null);
     }
   };
@@ -93,7 +147,7 @@ export default function ArtifactDevUI() {
       <aside className="w-80 border-r border-slate-800 flex flex-col">
         <div className="p-4 border-b border-slate-800 space-y-3">
           <h1 className="font-bold text-xl text-white">Artifact Editor</h1>
-          <input 
+          <input
             className="w-full bg-slate-900 border border-slate-700 rounded px-3 py-1.5 text-sm"
             placeholder="Search..."
             value={search}
@@ -110,7 +164,7 @@ export default function ArtifactDevUI() {
         </div>
         <div className="flex-1 overflow-y-auto p-2 space-y-2">
           {filteredArtifacts.map(a => (
-            <div 
+            <div
               key={a.id}
               onClick={() => setEditingId(a.id)}
               className={`p-3 rounded-lg border cursor-pointer transition-colors ${editingId === a.id ? 'border-indigo-500 bg-indigo-500/10' : 'border-slate-800 bg-slate-900/40 hover:bg-slate-900'}`}
@@ -131,10 +185,10 @@ export default function ArtifactDevUI() {
 
       <main className="flex-1 overflow-y-auto bg-slate-950 p-8">
         {editingArtifact ? (
-          <EditorForm 
-            artifact={editingArtifact} 
+          <EditorForm
+            artifact={editingArtifact}
             allArtifacts={artifacts}
-            onSave={handleSave} 
+            onSave={handleSave}
             onDelete={() => deleteArtifact(editingArtifact.id)}
           />
         ) : (
@@ -147,18 +201,24 @@ export default function ArtifactDevUI() {
   );
 }
 
-function EditorForm({ 
-  artifact, 
+function EditorForm({
+  artifact,
   allArtifacts,
-  onSave, 
-  onDelete 
-}: { 
-  artifact: ArtifactDefinition; 
+  onSave,
+  onDelete
+}: {
+  artifact: ArtifactDefinition;
   allArtifacts: ArtifactDefinition[];
-  onSave: (a: ArtifactDefinition) => void;
+  onSave: (a: ArtifactDefinition, originalId: string) => void;
   onDelete: () => void;
 }) {
   const [form, setForm] = useState<ArtifactDefinition>(artifact);
+  const originalIdRef = React.useRef(artifact.id);
+
+  React.useEffect(() => {
+    setForm(artifact);
+    originalIdRef.current = artifact.id;
+  }, [artifact.id]);
 
   React.useEffect(() => {
     setForm(artifact);
@@ -167,7 +227,7 @@ function EditorForm({
   const update = (updates: Partial<ArtifactDefinition>) => {
     const next = { ...form, ...updates };
     setForm(next);
-    onSave(next);
+    onSave(next, originalIdRef.current);
   };
 
   const addCombo = () => {
@@ -194,41 +254,41 @@ function EditorForm({
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <Field label="Unique ID">
-                <input 
+                <input
                   className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm"
-                  value={form.id} 
-                  onChange={e => update({ id: e.target.value })} 
+                  value={form.id}
+                  onChange={e => update({ id: e.target.value })}
                 />
               </Field>
               <Field label="Display Name">
-                <input 
+                <input
                   className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm"
-                  value={form.name} 
-                  onChange={e => update({ name: e.target.value })} 
+                  value={form.name}
+                  onChange={e => update({ name: e.target.value })}
                 />
               </Field>
             </div>
             <Field label="Description">
-              <textarea 
+              <textarea
                 className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm h-20 resize-none"
-                value={form.description} 
-                onChange={e => update({ description: e.target.value })} 
+                value={form.description}
+                onChange={e => update({ description: e.target.value })}
               />
             </Field>
             <div className="grid grid-cols-2 gap-4">
               <Field label="Piece Affinity">
-                <select 
+                <select
                   className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm"
-                  value={form.pieceFamily} 
+                  value={form.pieceFamily}
                   onChange={e => update({ pieceFamily: e.target.value as ArtifactFamily })}
                 >
                   {FAMILY_OPTIONS.map(f => <option key={f} value={f}>{f.toUpperCase()}</option>)}
                 </select>
               </Field>
               <Field label="Rarity">
-                <select 
+                <select
                   className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm"
-                  value={form.rarity} 
+                  value={form.rarity}
                   onChange={e => update({ rarity: e.target.value as ArtifactRarity })}
                 >
                   {RARITY_OPTIONS.map(r => <option key={r} value={r}>{r.toUpperCase()}</option>)}
@@ -244,10 +304,10 @@ function EditorForm({
             <div className="flex gap-4">
               <div className="flex-1">
                 <Field label="Icon ViewBox">
-                  <input 
+                  <input
                     className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-sm"
-                    value={form.iconViewBox} 
-                    onChange={e => update({ iconViewBox: e.target.value })} 
+                    value={form.iconViewBox}
+                    onChange={e => update({ iconViewBox: e.target.value })}
                   />
                 </Field>
               </div>
@@ -256,18 +316,18 @@ function EditorForm({
               </div>
             </div>
             <Field label="Boon Icon (SVG Content)">
-              <textarea 
+              <textarea
                 className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-[10px] font-mono h-24"
-                value={form.iconSvg} 
-                onChange={e => update({ iconSvg: e.target.value })} 
+                value={form.iconSvg}
+                onChange={e => update({ iconSvg: e.target.value })}
               />
             </Field>
             <Field label="Piece Overlay SVG (Optional)">
-              <textarea 
+              <textarea
                 className="w-full bg-slate-900 border border-slate-800 rounded p-2 text-[10px] font-mono h-24"
-                value={form.pieceOverlaySvg || ''} 
+                value={form.pieceOverlaySvg || ''}
                 placeholder="Leave empty for no overlay..."
-                onChange={e => update({ pieceOverlaySvg: e.target.value || null })} 
+                onChange={e => update({ pieceOverlaySvg: e.target.value || null })}
               />
             </Field>
           </div>
@@ -280,58 +340,67 @@ function EditorForm({
           <button onClick={addCombo} className="text-indigo-400 hover:text-indigo-300 text-xs font-bold">+ ADD COMBO</button>
         </div>
         <div className="grid grid-cols-1 gap-4">
-          {form.combos.map((combo, idx) => (
-            <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex gap-4">
-              <div className="flex-1 space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Combo With Artifact">
-                    <select 
-                      className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs"
-                      value={combo.withId}
+          {form.combos.map((combo, idx) => {
+            const mirrorArtifact = allArtifacts.find(a => a.id === combo.withId);
+            const hasMirror = mirrorArtifact?.combos.some(c => c.withId === form.id);
+            return (
+              <div key={idx} className="bg-slate-900 border border-slate-800 p-4 rounded-lg flex gap-4">
+                <div className="flex-1 space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Combo With Artifact">
+                      <select
+                        className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs"
+                        value={combo.withId}
+                        onChange={e => {
+                          const combos = [...form.combos];
+                          combos[idx] = { ...combo, withId: e.target.value };
+                          update({ combos });
+                        }}
+                      >
+                        <option value="">Select Artifact...</option>
+                        {allArtifacts.filter(a => a.id !== form.id).map(a => (
+                          <option key={a.id} value={a.id}>{a.name}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <Field label="Bonus Tag">
+                      <input
+                        className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs"
+                        value={combo.bonusTag}
+                        onChange={e => {
+                          const combos = [...form.combos];
+                          combos[idx] = { ...combo, bonusTag: e.target.value.toUpperCase() };
+                          update({ combos });
+                        }}
+                      />
+                    </Field>
+                  </div>
+                  <Field label="Bonus Description">
+                    <textarea
+                      className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs h-12"
+                      value={combo.bonusDescription}
                       onChange={e => {
                         const combos = [...form.combos];
-                        combos[idx] = { ...combo, withId: e.target.value };
-                        update({ combos });
-                      }}
-                    >
-                      <option value="">Select Artifact...</option>
-                      {allArtifacts.filter(a => a.id !== form.id).map(a => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Bonus Tag">
-                    <input 
-                      className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs"
-                      value={combo.bonusTag}
-                      onChange={e => {
-                        const combos = [...form.combos];
-                        combos[idx] = { ...combo, bonusTag: e.target.value.toUpperCase() };
+                        combos[idx] = { ...combo, bonusDescription: e.target.value };
                         update({ combos });
                       }}
                     />
                   </Field>
+                  {combo.withId && (
+                    <div className={`text-[10px] font-bold px-2 py-1 rounded w-fit ${hasMirror ? 'text-emerald-400 bg-emerald-950/60' : 'text-amber-400 bg-amber-950/60'}`}>
+                      {hasMirror ? `✓ MIRRORED ON ${mirrorArtifact?.name.toUpperCase()}` : `⟳ MIRROR PENDING SAVE`}
+                    </div>
+                  )}
                 </div>
-                <Field label="Bonus Description">
-                  <textarea 
-                    className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-xs h-12"
-                    value={combo.bonusDescription}
-                    onChange={e => {
-                      const combos = [...form.combos];
-                      combos[idx] = { ...combo, bonusDescription: e.target.value };
-                      update({ combos });
-                    }}
-                  />
-                </Field>
+                <button
+                  onClick={() => update({ combos: form.combos.filter((_, i) => i !== idx) })}
+                  className="self-start text-slate-600 hover:text-rose-500 p-1"
+                >
+                  ✕
+                </button>
               </div>
-              <button 
-                onClick={() => update({ combos: form.combos.filter((_, i) => i !== idx) })}
-                className="self-start text-slate-600 hover:text-rose-500 p-1"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>
