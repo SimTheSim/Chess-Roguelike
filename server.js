@@ -60,13 +60,25 @@ function roomSummary(room) {
     full: room.players.white !== null && room.players.black !== null,
     matchTarget: room.matchTarget,
     upgradePriority: room.upgradePriority,
+    clockMode: room.clockMode,
   };
+}
+
+function getRoomTimes(room) {
+  let white = room.clockWhite;
+  let black = room.clockBlack;
+  if (room.clockStarted && room.lastTickAt) {
+    const elapsed = Date.now() - room.lastTickAt;
+    if (room.clockTurn === 'white') white = Math.max(0, white - elapsed);
+    else black = Math.max(0, black - elapsed);
+  }
+  return { whiteTime: white, blackTime: black };
 }
 
 io.on('connection', (socket) => {
   console.log(`[+] Connected: ${socket.id}`);
 
-  socket.on('create_room', ({ playerName, matchTarget, upgradePriority, clientId, isPublic }, callback) => {
+  socket.on('create_room', ({ playerName, matchTarget, upgradePriority, clockMode, clientId, isPublic }, callback) => {
     const code = generateRoomCode();
     rooms[code] = {
       code,
@@ -76,9 +88,16 @@ io.on('connection', (socket) => {
       playerNames: { white: playerName || 'Host', black: '' },
       upgradePriority: upgradePriority || 'loser-only',
       matchTarget: matchTarget || 5,
+      clockMode: clockMode || 'none',
+      clockStarted: false,
+      clockTurn: 'white',
+      clockWhite: null,
+      clockBlack: null,
+      lastTickAt: null,
       gameState: null,
       createdAt: Date.now(),
       disconnectTimeouts: { white: null, black: null },
+      disconnectedAt: { white: null, black: null },
     };
     socket.join(code);
     socket.data.roomCode = code;
@@ -167,8 +186,13 @@ io.on('connection', (socket) => {
       stateToSend = { 
         ...stateToSend, 
         playerScore: stateToSend.opponentScore, 
-        opponentScore: stateToSend.playerScore 
+        opponentScore: stateToSend.playerScore,
       };
+    }
+
+    if (stateToSend && room.clockStarted) {
+      const { whiteTime, blackTime } = getRoomTimes(room);
+      stateToSend = { ...stateToSend, whiteTime, blackTime };
     }
 
     callback({
@@ -180,12 +204,13 @@ io.on('connection', (socket) => {
     });
   });
 
-  socket.on('room_settings_update', ({ code, matchTarget, upgradePriority }) => {
+  socket.on('room_settings_update', ({ code, matchTarget, upgradePriority, clockMode }) => {
     const room = rooms[code];
     if (room && socket.data.color === 'white') {
       room.matchTarget = matchTarget;
       room.upgradePriority = upgradePriority;
-      socket.to(code).emit('room_settings_update', { matchTarget, upgradePriority });
+      room.clockMode = clockMode;
+      socket.to(code).emit('room_settings_update', { matchTarget, upgradePriority, clockMode });
     }
   });
 
@@ -193,9 +218,20 @@ io.on('connection', (socket) => {
     const roomCode = (code || socket.data.roomCode)?.toUpperCase();
     const room = rooms[roomCode];
     if (!room) return;
+
+    if (state.clockStarted && room.clockWhite === null && state.whiteTime != null) {
+      room.clockWhite = state.whiteTime;
+      room.clockBlack = state.blackTime;
+    }
+    if (state.clockStarted) {
+      room.clockStarted = true;
+      room.clockWhite = state.whiteTime;
+      room.clockBlack = state.blackTime;
+      room.clockTurn = state.turn;
+      room.lastTickAt = Date.now();
+    }
     
     room.gameState = { ...state, lastSender: socket.data.color };
-    
     console.log(`[SYNC] Relaying move in room ${roomCode} (Turn: ${state.turn})`);
     socket.to(roomCode).emit('game_state', { state });
   });
@@ -208,18 +244,19 @@ io.on('connection', (socket) => {
     io.to(code).emit('chat_message', { message, playerName, ts: Date.now() });
   });
 
-  socket.on('rematch_proposal', ({ code, matchTarget, upgradePriority }) => {
-    socket.to(code).emit('rematch_proposal', { matchTarget, upgradePriority });
+  socket.on('rematch_proposal', ({ code, matchTarget, upgradePriority, clockMode }) => {
+    socket.to(code).emit('rematch_proposal', { matchTarget, upgradePriority, clockMode });
   });
 
-  socket.on('rematch_accept', ({ code, matchTarget, upgradePriority }) => {
+  socket.on('rematch_accept', ({ code, matchTarget, upgradePriority, clockMode }) => {
     const room = rooms[code];
     if (room) {
       room.gameState = null;
       room.matchTarget = matchTarget;
       room.upgradePriority = upgradePriority;
+      room.clockMode = clockMode;
     }
-    io.to(code).emit('rematch_start', { matchTarget, upgradePriority });
+    io.to(code).emit('rematch_start', { matchTarget, upgradePriority, clockMode });
   });
 
   socket.on('rematch_decline', ({ code }) => {
@@ -233,6 +270,7 @@ io.on('connection', (socket) => {
     const color = socket.data.color;
     if (color) {
       room.players[color] = null;
+      room.disconnectedAt[color] = Date.now();
       room.clientIds[color] = null;
       room.playerNames[color] = '';
       socket.to(roomCode).emit('opponent_left');
@@ -253,6 +291,7 @@ io.on('connection', (socket) => {
     const room = rooms[roomCode];
     if (room.players[color] !== socket.id) return;
     room.players[color] = null;
+    room.disconnectedAt[color] = Date.now();
 
     io.to(roomCode).emit('opponent_temporarily_disconnected', { color, timeout: 60 });
 

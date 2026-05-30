@@ -7,6 +7,7 @@ export function useMatchSettings() {
   const [theme, setTheme] = useState<'classic' | 'retro-green' | 'retro-cyber'>('classic');
   const [aiDifficulty, setAiDifficulty] = useState<number>(3);
   const [upgradePriority, setUpgradePriority] = useState<'loser-only' | 'loser-then-winner'>('loser-only');
+  const [clockMode, setClockMode] = useState<string>('none');
 
   return {
     level, setLevel,
@@ -14,6 +15,7 @@ export function useMatchSettings() {
     gameMode, setGameMode,
     theme, setTheme,
     aiDifficulty, setAiDifficulty,
-    upgradePriority, setUpgradePriority
+    upgradePriority, setUpgradePriority,
+    clockMode, setClockMode
   };
 }

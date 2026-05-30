@@ -9,7 +9,12 @@
    `npm run dev`
 
 
-TODO
-Fix castling bug: only on last rank, and only when neither the king or the rook have moved
-More combos
-Add a chess clock
+## TODO
+ - Add legendary artifacts
+ - Add custom clock settings
+ - Add global loading screen
+ - Add persistence for other game modes and for game end view
+ - Add sounds
+ - Check phone views for everything
+ - More combos and artifacts when the creativity I ordered on Amazon arrives
+ - Being able to see past moves

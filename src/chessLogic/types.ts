@@ -33,6 +33,7 @@ export interface ExecuteContext {
   exploded: Position[];
   nextEnPassantTarget: Position | null;
   flameSquares: FlameSquare[];
+  pieceMoved: boolean;
 }
 
 export type MoveExtension = (ctx: MoveContext, moves: Position[]) => Position[];

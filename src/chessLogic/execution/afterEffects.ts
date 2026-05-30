@@ -27,7 +27,20 @@ export function applyPromotion(ctx: ExecuteContext): void {
 export function applyCastlingSideEffects(ctx: ExecuteContext): void {
   const { piece, from, to, ownUpgrades, nextBoard, exploded } = ctx;
 
-  const isCastling = piece.type === 'king' && Math.abs(from.c - to.c) === 2;
+  const isKingsideAttempt = to.c === 6;
+  const rookC = isKingsideAttempt ? 7 : 0;
+  const cornerRook = nextBoard[from.r][rookC];
+  const homeRow = piece.color === 'white' ? 7 : 0;
+  const isCastling =
+    piece.type === 'king' &&
+    !ctx.pieceMoved &&
+    from.r === homeRow &&
+    to.r === homeRow &&
+    from.c === 4 &&
+    (to.c === 6 || to.c === 2) &&
+    cornerRook?.type === 'rook' &&
+    cornerRook.color === piece.color &&
+    !cornerRook.hasMoved;
   if (!isCastling) return;
 
   const r = from.r;
@@ -102,6 +115,17 @@ export function applyQueenExtraCapture(ctx: ExecuteContext): void {
   const adjDeltas: [number, number][] = [
     [-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]
   ];
+
+  const shuffle = <T>(array: T[]) => { 
+    for (let i = array.length - 1; i > 0; i--) { 
+      const j = Math.floor(Math.random() * (i + 1)); 
+      [array[i], array[j]] = [array[j], array[i]]; 
+    }
+    return array; 
+  }; 
+
+  shuffle(adjDeltas)
+
   for (const [dr, dc] of adjDeltas) {
     const ar = to.r + dr;
     const ac = to.c + dc;
@@ -136,5 +160,5 @@ export function applyKingPawnSpawn(ctx: ExecuteContext): void {
 export function applyQueenFlames(ctx: ExecuteContext): void {
   const { piece, from, ownUpgrades, flameSquares } = ctx;
   if (piece.type !== 'queen' || !ownUpgrades.includes('queen-flames')) return;
-  flameSquares.push({ r: from.r, c: from.c, turnsLeft: 5 });
+  flameSquares.push({ r: from.r, c: from.c, turnsLeft: 4 });
 }

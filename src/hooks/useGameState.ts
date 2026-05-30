@@ -14,6 +14,8 @@ export function useGameState() {
   const [capturedByBlack, setCapturedByBlack] = useState<Piece[]>([]);
   const [moveHistory, setMoveHistory] = useState<string[]>([]);
   const [crumblingColor, setCrumblingColor] = useState<'white' | 'black' | null>(null);
+  const [whiteTime, setWhiteTime] = useState<number>(0);
+  const [blackTime, setBlackTime] = useState<number>(0);
 
   return {
     board, setBoard,
@@ -26,6 +28,8 @@ export function useGameState() {
     capturedByWhite, setCapturedByWhite,
     capturedByBlack, setCapturedByBlack,
     moveHistory, setMoveHistory,
-    crumblingColor, setCrumblingColor
+    crumblingColor, setCrumblingColor,
+    whiteTime, setWhiteTime,
+    blackTime, setBlackTime
   };
 }

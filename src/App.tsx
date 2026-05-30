@@ -10,6 +10,8 @@ import { DebugArtifactMenu } from './components/DebugArtifactMenu';
 import { Header } from './components/Header';
 import { StartScreen } from './components/StartScreen';
 import { DashboardLeft, DashboardRight } from './components/GameDashboard';
+import { useState, useEffect } from 'react';
+import { PreloadScreen } from './components/PreloadScreen';
 
 
 function GameUI() {
@@ -17,7 +19,7 @@ function GameUI() {
     theme, setTheme, gameMode, setGameMode, status, setStatus,
     mpColor, mpRoomCode, mpOppName, mpPlayerName,
     mpSocket, setMpSocket, setMpColor, setMpRoomCode, setMpOppName, setMpPlayerName,
-    setMatchTarget, setUpgradePriority,
+    setMatchTarget, setUpgradePriority, clockMode, setClockMode, whiteTime, blackTime, turn,
     roundCounter, matchTarget, playerScore, opponentScore,
     upgrades, setUpgrades, opponentUpgrades, setOpponentUpgrades,
     board, selectedPos, validMoves, explodedCells, crumblingColor, flameSquares,
@@ -29,16 +31,24 @@ function GameUI() {
     getTurnLabel, handleCellClick, startNewMatch, proceedToUpgradeFlow,
     handleUpgradeSelect, handleWinnerUpgradeSelect,
     opponentTempDisconnected, disconnectCountdown, opponentLeft,
-    rematchProposal, rematchDeclined, setRematchProposal, setRematchDeclined
+    rematchProposal, rematchDeclined, setRematchProposal, setRematchDeclined,
+    isPreloading, setIsPreloading
   } = useGame();
 
+  const formatTime = (ms: number) => {
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
   const handleProposeRematch = () => {
-    mpSocket?.emit('rematch_proposal', { code: mpRoomCode, matchTarget, upgradePriority });
+    mpSocket?.emit('rematch_proposal', { code: mpRoomCode, matchTarget, upgradePriority, clockMode });
     setStatus('waiting-for-opponent-proceed');
   };
 
   const handleAcceptRematch = () => {
-    mpSocket?.emit('rematch_accept', { code: mpRoomCode, matchTarget: rematchProposal.matchTarget, upgradePriority: rematchProposal.upgradePriority });
+    mpSocket?.emit('rematch_accept', { code: mpRoomCode, matchTarget: rematchProposal.matchTarget, upgradePriority: rematchProposal.upgradePriority, clockMode: rematchProposal.clockMode });
   };
 
   const handleDeclineRematch = () => {
@@ -48,6 +58,11 @@ function GameUI() {
   };
 
   return (
+    <>
+    <AnimatePresence>
+        {isPreloading && <PreloadScreen />}
+    </AnimatePresence>
+    {!isPreloading && (
     <div className={`min-h-screen text-zinc-300 flex flex-col font-mono select-none transition-colors duration-300
       ${theme === 'classic' ? 'bg-[#050505]' : ''}
       ${theme === 'retro-green' ? 'bg-[#010903]' : ''}
@@ -71,11 +86,11 @@ function GameUI() {
           {status === 'lobby' && (
             <div className="fixed inset-0 z-50">
               <MultiplayerLobby
-                onReady={({ socket, color, roomCode, opponentName, playerName: myName, matchTarget: lobbyTarget, upgradePriority: lobbyPriority }) => {
+                onReady={({ socket, color, roomCode, opponentName, playerName: myName, matchTarget: lobbyTarget, upgradePriority: lobbyPriority, clockMode: lobbyClockMode }) => {
                   setMpSocket(socket); setMpColor(color); setMpRoomCode(roomCode);
                   setMpOppName(opponentName); setMpPlayerName(myName ?? '');
-                  setMatchTarget(lobbyTarget); setUpgradePriority(lobbyPriority);
-                  startNewMatch();
+                  setMatchTarget(lobbyTarget); setUpgradePriority(lobbyPriority); setClockMode(lobbyClockMode);
+                  startNewMatch(lobbyClockMode);
                 }}
                 onBack={() => setStatus('start')}
               />
@@ -86,14 +101,21 @@ function GameUI() {
             <motion.div key="playing-screen" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start w-full select-none" id="playing-screen">
               <DashboardLeft/>
 
-              <div className="lg:col-span-6 flex flex-col items-center justify-center p-1" id="board-center">
-                <div className="w-full max-w-[480px] mb-3 p-2 bg-zinc-950 border-2 border-zinc-850 text-center font-pixel flex items-center justify-between px-4">
-                  <span></span>
-                  <span className="text-[9px] font-bold tracking-wider text-emerald-400">
-                    {getTurnLabel()}
-                  </span>
-                  <span></span>
-                </div>
+                <div className="lg:col-span-6 flex flex-col items-center justify-center p-1" id="board-center">
+                {clockMode !== 'none' && (
+                  <div className={`w-full max-w-[480px] mb-2 p-2 border-2 text-center font-pixel text-xl ${turn !== mpColor ? 'bg-zinc-800 border-zinc-500 text-white' : 'bg-zinc-950 border-zinc-850 text-zinc-500'}`}>
+                    {formatTime(mpColor == "white" ? blackTime : whiteTime)}
+                  </div>
+                )}
+                {clockMode === 'none' && (    
+                  <div className="w-full max-w-[480px] mb-3 p-2 bg-zinc-950 border-2 border-zinc-850 text-center font-pixel flex items-center justify-between px-4">
+                    <span></span>
+                    <span className="text-[9px] font-bold tracking-wider text-emerald-400">
+                      {getTurnLabel()}
+                    </span>
+                    <span></span>
+                  </div>
+                )}
 
                 <ChessBoard
                   board={board} selectedPos={selectedPos} validMoves={validMoves} onCellClick={handleCellClick}
@@ -101,6 +123,12 @@ function GameUI() {
                   theme={theme} crumblingColor={crumblingColor} flipped={gameMode === 'online' && mpColor === 'black'}
                   hiddenKingColor={opponentUpgrades.includes('king-hidden') ? 'black' : null} flameSquares={flameSquares}
                 />
+
+                {clockMode !== 'none' && (
+                  <div className={`w-full max-w-[480px] mt-3 p-2 border-2 text-center font-pixel text-xl ${turn === mpColor ? 'bg-zinc-800 border-zinc-500 text-white' : 'bg-zinc-950 border-zinc-850 text-zinc-500'}`}>
+                    {formatTime(mpColor == "white" ? whiteTime : blackTime)}
+                  </div>
+                )}
               </div>
 
               <DashboardRight/>
@@ -220,6 +248,8 @@ function GameUI() {
       </main>
       <DebugArtifactMenu/>
     </div>
+  )}
+  </>
   );
 }
 

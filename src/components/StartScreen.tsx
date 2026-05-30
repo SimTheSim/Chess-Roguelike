@@ -5,6 +5,7 @@ import { useGame } from '../GameContext';
 export const StartScreen = () => {
   const { theme, setTheme, gameMode, setGameMode, aiDifficulty, setAiDifficulty,
     matchTarget, setMatchTarget, upgradePriority, setUpgradePriority,
+    clockMode, setClockMode,
     activeTab, setActiveTab, startNewMatch, setStatus } = useGame();
   return (
     <motion.div
@@ -56,7 +57,7 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-500 hover:text-zinc-300'
                     }`}
                 >
-                  CAMPAIGN VS AI
+                  CAMPAIGN
                 </button>
                 <button
                   onClick={() => setGameMode('pvp')}
@@ -65,7 +66,7 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-400 hover:text-zinc-200'
                     }`}
                 >
-                  PvP PASS-N-PLAY
+                  PASS-N-PLAY
                 </button>
                 <button
                   onClick={() => setGameMode('online')}
@@ -74,14 +75,14 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-400 hover:text-zinc-200'
                     }`}
                 >
-                  ONLINE PvP
+                  ONLINE
                 </button>
               </div>
             </div>
 
             {gameMode === 'campaign' && (
               <div>
-                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">AI DIFFICULTY LEVEL</span>
+                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">DIFFICULTY</span>
                 <div className="flex gap-1.5">
                   {[1, 2, 3, 4, 5].map(d => (
                     <button
@@ -101,7 +102,7 @@ export const StartScreen = () => {
 
             {gameMode !== 'online' && (
               <div>
-                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">MATCH GOAL (WINS TARGET)</span>
+                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">MATCH GOAL</span>
                 <div className="flex gap-2">
                   {[3, 5, 7].map(t => (
                     <button
@@ -138,10 +139,38 @@ export const StartScreen = () => {
                       LOSER THEN WINNER
                     </button>
                   </div>
-                  <p className="text-[7px] text-zinc-600 mt-1.5 font-pixel">
-                    {upgradePriority === 'loser-then-winner' ? 'Loser picks first, winner picks from the 2 remaining.' : 'Only the loser picks a boon each round.'}
-                  </p>
                 </div>
+
+                <div className="mt-4">
+                  <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2">TIME CONTROL</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setClockMode('none')}
+                      className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === 'none' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}
+                    >
+                      NONE
+                    </button>
+                     <button
+                      onClick={() => setClockMode('1|1')}
+                      className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '1|1' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}
+                    >
+                      1|1
+                    </button>
+                    <button
+                      onClick={() => setClockMode('3|2')}
+                      className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '3|2' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}
+                    >
+                      3|2
+                    </button>
+                    <button
+                      onClick={() => setClockMode('5|3')}
+                      className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '5|3' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}
+                    >
+                      5|3
+                    </button>
+                  </div>
+                </div>
+
               </div>
             )}
           </div>
@@ -159,8 +188,7 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-500'
                     }`}
                 >
-                  <span>CLASSIC MONOCHROME</span>
-                  <span className="text-[7px] p-0.5 bg-zinc-800 border text-zinc-400">Default B&W</span>
+                  <span>CLASSIC</span>
                 </button>
                 <button
                   onClick={() => setTheme('retro-green')}
@@ -169,8 +197,7 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-500'
                     }`}
                 >
-                  <span>MATRIX CRT DISPLAY</span>
-                  <span className="text-[7px] p-0.5 bg-green-950 text-green-400 border border-green-700">GameBoy 1989</span>
+                  <span>MATRIX</span>
                 </button>
                 <button
                   onClick={() => setTheme('retro-cyber')}
@@ -179,8 +206,7 @@ export const StartScreen = () => {
                       : 'bg-black border-zinc-800 text-zinc-500'
                     }`}
                 >
-                  <span>AMBER & NEON CYBERPUNK</span>
-                  <span className="text-[7px] p-0.5 bg-indigo-950 text-sky-400 border border-indigo-700">Futuristic</span>
+                  <span>CYBERPUNK</span>
                 </button>
               </div>
             </div>

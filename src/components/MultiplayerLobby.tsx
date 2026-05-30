@@ -13,6 +13,7 @@ export interface ReadyPayload {
   playerName: string;
   matchTarget: number;
   upgradePriority: 'loser-only' | 'loser-then-winner';
+  clockMode: string;
 }
 
 interface MultiplayerLobbyProps {
@@ -36,6 +37,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
   const [connecting, setConnecting] = useState(false);
   const [matchTarget, setMatchTarget] = useState<number>(5);
   const [upgradePriority, setUpgradePriority] = useState<'loser-only' | 'loser-then-winner'>('loser-only');
+  const [clockMode, setClockMode] = useState<string>('none');
 
   const socketRef = useRef<Socket | null>(null);
   const handedOffRef = useRef(false);
@@ -62,7 +64,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
     setConnecting(true);
     const socket = getSocket();
 
-    socket.emit('create_room', { playerName: playerName.trim(), matchTarget, upgradePriority, clientId: getClientId(), isPublic }, (res: any) => {
+    socket.emit('create_room', { playerName: playerName.trim(), matchTarget, upgradePriority, clockMode, clientId: getClientId(), isPublic }, (res: any) => {
       setConnecting(false);
       if (!res.ok) { setError(res.error ?? 'Server error.'); return; }
       setRoomCode(res.code);
@@ -74,7 +76,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         setOpponentName(name);
         setTimeout(() => {
           handedOffRef.current = true;
-          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, playerName: playerName.trim(), matchTarget, upgradePriority });
+          onReady({ socket, color: 'white', roomCode: res.code, opponentName: name, playerName: playerName.trim(), matchTarget, upgradePriority, clockMode });
         }, 800);
       });
     });
@@ -101,7 +103,8 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
         handedOffRef.current = true;
         const roomMatchTarget = res.room.matchTarget ?? 5;
         const roomUpgradePriority = res.room.upgradePriority ?? 'loser-only';
-        onReady({ socket, color: res.color, roomCode: res.code, opponentName: oppName, matchTarget: roomMatchTarget, upgradePriority: roomUpgradePriority });
+        const roomClockMode = res.room.clockMode ?? 'none';
+        onReady({ socket, color: res.color, roomCode: res.code, opponentName: oppName, matchTarget: roomMatchTarget, upgradePriority: roomUpgradePriority, clockMode: roomClockMode });
       }
     );
   };
@@ -280,6 +283,16 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
                   >
                     LOSER THEN WINNER
                   </button>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <span className="text-[8px] font-pixel text-zinc-400 uppercase block mb-2 text-center">TIME CONTROL</span>
+                <div className="flex gap-2">
+                  <button onClick={() => setClockMode('none')} className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === 'none' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}>NONE</button>
+                  <button onClick={() => setClockMode('1|1')} className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '1|1' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}>1|1</button>
+                  <button onClick={() => setClockMode('3|2')} className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '3|2' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}>3|2</button>
+                  <button onClick={() => setClockMode('5|3')} className={`flex-1 py-1.5 border-2 text-[8px] font-pixel cursor-pointer ${clockMode === '5|3' ? 'bg-emerald-950 border-emerald-400 text-emerald-400 font-bold' : 'bg-black border-zinc-800 text-zinc-500'}`}>5|3</button>
                 </div>
               </div>
 
@@ -483,7 +496,7 @@ export function MultiplayerLobby({ onReady, onBack }: MultiplayerLobbyProps) {
             </div>
           </motion.div>
         )}
-        
+
         {view === 'browse' && (
           <motion.div
             key="browse"

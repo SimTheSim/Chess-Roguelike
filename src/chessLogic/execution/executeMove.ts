@@ -52,6 +52,7 @@ export function executeMove(
     nextEnPassantTarget = { r: (from.r + to.r) / 2, c: from.c };
   }
 
+  const pieceMoved = piece.hasMoved;
   piece.hasMoved = true;
   nextBoard[to.r][to.c] = piece;
   nextBoard[from.r][from.c] = null;
@@ -69,6 +70,7 @@ export function executeMove(
     exploded,
     nextEnPassantTarget,
     flameSquares,
+    pieceMoved,
   };
 
   applyKingPawnSpawn(ctx);

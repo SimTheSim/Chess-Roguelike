@@ -33,6 +33,8 @@ interface GameContextValue {
   setGameMode: (v: string) => void;
   theme: string;
   setTheme: (v: string) => void;
+  clockMode: string;
+  setClockMode: (v: string) => void;
   aiDifficulty: string;
   setAiDifficulty: (v: string) => void;
   upgradePriority: string;
@@ -71,6 +73,11 @@ interface GameContextValue {
   setMoveHistory: (v: any) => void;
   crumblingColor: 'white' | 'black' | null;
   setCrumblingColor: (v: 'white' | 'black' | null) => void;
+
+  whiteTime: number;
+  setWhiteTime: (v: number) => void;
+  blackTime: number;
+  setBlackTime: (v: number) => void;
 
   status: GameStatus;
   setStatus: (v: GameStatus) => void;
@@ -115,6 +122,9 @@ interface GameContextValue {
   rematchDeclined: boolean;
   setRematchDeclined: (v: boolean) => void;
 
+  isPreloading: any;
+  setIsPreloading: (v: any) => void;
+
   syncState: (payload: any) => void;
   activeTab: 'setup' | 'settings';
   setActiveTab: (v: 'setup' | 'settings') => void;
@@ -138,7 +148,8 @@ export function GameProvider({ children }: { children: ReactNode }) {
     gameMode, setGameMode,
     theme, setTheme,
     aiDifficulty, setAiDifficulty,
-    upgradePriority, setUpgradePriority
+    upgradePriority, setUpgradePriority,
+    clockMode, setClockMode
   } = useMatchSettings();
 
   const {
@@ -163,7 +174,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
     capturedByWhite, setCapturedByWhite,
     capturedByBlack, setCapturedByBlack,
     moveHistory, setMoveHistory,
-    crumblingColor, setCrumblingColor
+    crumblingColor, setCrumblingColor,
+    whiteTime, setWhiteTime,
+    blackTime, setBlackTime
   } = useGameState();
 
   const [activeTab, setActiveTab] = useState<'setup' | 'settings'>('setup');
@@ -184,6 +197,16 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const [comboOpponentProceeded, setComboOpponentProceeded] = useState(false);
   const [rematchDeclined, setRematchDeclined] = useState(false);
   const [rematchProposal, setRematchProposal] = useState(false);
+  const [isPreloading, setIsPreloading] = useState(true);
+  const [clockStarted, setClockStarted] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setIsPreloading(false);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
   const reconnectAttempted = useRef(false);
 
   useEffect(() => { mpColorRef.current = mpColor; }, [mpColor]);
@@ -203,13 +226,14 @@ export function GameProvider({ children }: { children: ReactNode }) {
           mpColorRef.current = res.color;
           setMatchTarget(res.room.matchTarget);
           setUpgradePriority(res.room.upgradePriority);
+          if (res.room.clockMode) setClockMode(res.room.clockMode);
           const oppName = res.room.playerNames[res.color === 'white' ? 'black' : 'white'] || 'Opponent';
           setMpOppName(oppName);
           setGameMode('online');
           if (res.gameState) {
             handleRemoteState(res.gameState);
           } else if (res.room.players.white && res.room.players.black) {
-            startNewMatch();
+            startNewMatch(res.room.clockMode ?? 'none');
           } else {
             setStatus('waiting-for-opponent-proceed');
           }
@@ -250,9 +274,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
         });
       }
     };
-    const onSettingsUpdate = ({ matchTarget: mt, upgradePriority: up }: any) => {
+    const onSettingsUpdate = ({ matchTarget: mt, upgradePriority: up, clockMode: cm }: any) => {
       setMatchTarget(mt);
       setUpgradePriority(up);
+      if (cm) setClockMode(cm);
     };
     const onProposal = (data: any) => {
       setRematchProposal(data);
@@ -260,9 +285,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const onDecline = () => {
       setRematchDeclined(true);
     };
-    const onRematchStart = ({ matchTarget: mt, upgradePriority: up }: any) => {
+    const onRematchStart = ({ matchTarget: mt, upgradePriority: up, clockMode: cm }: any) => {
       setMatchTarget(mt);
       setUpgradePriority(up);
+      if (cm) setClockMode(cm);
       setRematchProposal(null);
       setRematchDeclined(false);
       startNewMatch();
@@ -313,16 +339,47 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const roundEndingRef = useRef(false);
   const mpColorRef = useRef<'white' | 'black'>('white');
   const syncStateRef = useRef<(payload: any) => void>(() => {});
+  const timesRef = useRef({ whiteTime, blackTime });
+  useEffect(() => { timesRef.current = { whiteTime, blackTime }; }, [whiteTime, blackTime]);
 
   const stateRef = useRef({ playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority });
   useEffect(() => {
     stateRef.current = { playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority };
   }, [playerScore, opponentScore, matchTarget, gameMode, mpColor, upgrades, opponentUpgrades, upgradePriority]);
 
-  const upgradeStateRef = useRef({ status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter });
+  const upgradeStateRef = useRef({ status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter, whiteTime, blackTime });
   useEffect(() => {
-    upgradeStateRef.current = { status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter };
-  }, [status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter]);
+    upgradeStateRef.current = { status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter, whiteTime, blackTime };
+  }, [status, upgradeChoices, loserChosenId, roundWinner, board, turn, roundStartColor, upgrades, opponentUpgrades, enPassantTarget, capturedByWhite, capturedByBlack, moveHistory, playerScore, opponentScore, roundCounter, whiteTime, blackTime]);
+
+  useEffect(() => {
+    if (status !== 'playing' || clockMode === 'none' || isAIThinking || !clockStarted) return;
+    const interval = setInterval(() => {
+      if (turn === 'white') {
+        setWhiteTime((prev) => {
+          if (prev <= 1000) { 
+            clearInterval(interval); 
+            setCrumblingColor('white'); 
+            setTimeout(() => { setCrumblingColor(null); endRound('black'); }, 1500); 
+            return 0; 
+          }
+          return prev - 1000;
+        });
+      } else {
+        setBlackTime((prev) => {
+          if (prev <= 1000) { 
+            clearInterval(interval); 
+            setCrumblingColor('black'); 
+            setTimeout(() => { setCrumblingColor(null); endRound('white'); }, 1500); 
+            return 0; 
+          }
+          return prev - 1000;
+        });
+      }
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [status, clockMode, turn, isAIThinking]);
 
   const handleRemoteState = useCallback((state: any) => {
     if (!state) return;
@@ -332,6 +389,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (data.upgrades) setUpgrades(data.upgrades);
     if (data.opponentUpgrades) setOpponentUpgrades(data.opponentUpgrades);
     if (data.enPassantTarget !== undefined) setEnPassantTarget(data.enPassantTarget);
+    if (data.flameSquares !== undefined) setFlameSquares(data.flameSquares);
     if (data.capturedByWhite) setCapturedByWhite(data.capturedByWhite);
     if (data.capturedByBlack) setCapturedByBlack(data.capturedByBlack);
     if (data.moveHistory) setMoveHistory(data.moveHistory);
@@ -340,10 +398,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (data.roundCounter !== undefined) setRoundCounter(data.roundCounter);
     if (data.roundStartColor) setRoundStartColor(data.roundStartColor);
     if (data.upgradeChoices) setUpgradeChoices(data.upgradeChoices);
+    if (data.whiteTime !== undefined) setWhiteTime(data.whiteTime);
+    if (data.blackTime !== undefined) setBlackTime(data.blackTime);
     if (data.loserChosenId !== undefined) setLoserChosenId(data.loserChosenId);
     if (data.roundWinner !== undefined) setRoundWinner(data.roundWinner);
     if (data.proceeded !== undefined) setOppProceeded(data.proceeded);
     if (data.comboProceed !== undefined) setComboOpponentProceeded(data.comboProceed);
+    if (data.clockStarted !== undefined) setClockStarted(data.clockStarted);
     if (data.roundOver) {
       const loserColor = data.roundOver === 'white' ? 'black' : 'white';
       setCrumblingColor(loserColor);
@@ -396,7 +457,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => { syncStateRef.current = syncState; }, [syncState]);
 
-  const setupNextRound = (stageLvl: number, whiteBoons: string[], blackBoons: string[], startColor: 'white' | 'black') => {
+  const setupNextRound = (stageLvl: number, whiteBoons: string[], blackBoons: string[], startColor: 'white' | 'black', clock: string = clockMode) => {
     roundEndingRef.current = false;
     setBoard(createInitialBoard(stageLvl, whiteBoons, blackBoons));
     setTurn(startColor);
@@ -408,20 +469,26 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setExplodedCells([]);
     setEnPassantTarget(null);
     setFlameSquares([]);
+    setClockStarted(false);
     setMoveHistory([]);
     setIsAIThinking(false);
     setCrumblingColor(null);
+    if (clock !== 'none') {
+      const m = parseInt(clock.split('|')[0], 10);
+      setWhiteTime(m * 60 * 1000);
+      setBlackTime(m * 60 * 1000);
+    }
   };
 
-  const startNewMatch = () => {
+  const startNewMatch = (clock: string = clockMode) => {
     setPlayerScore(0);
     setOpponentScore(0);
     setUpgrades([]);
     setRoundCounter(1);
     setOpponentUpgrades([]);
     setLevel(1);
-    setupNextRound(1, [], [], 'white');
     setStatus('playing');
+    setupNextRound(1, [], [], 'white', clock);
   };
 
   const checkKingCaptured = (boardState: any): 'white' | 'black' | null => {
@@ -477,7 +544,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const choices = getRandomArtifacts(allUpgrades, allUpgrades);
         setUpgradeChoices(choices);
         setStatus('round-end-notifying');
-        syncState({ roundCounter: s.roundCounter, upgradeChoices: choices, roundWinner: winner });
+        syncState({ roundCounter: s.roundCounter, upgradeChoices: choices, roundWinner: winner, whiteTime: s.whiteTime, blackTime: s.blackTime });
       } else {
         setStatus('round-end-notifying');
       }
@@ -759,7 +826,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
           setTimeout(() => setExplodedCells([]), 800);
         }
         setEnPassantTarget(nextEnPassantTarget);
-        setFlameSquares((prev: any[]) => prev.map(f => ({ ...f, turnsLeft: f.turnsLeft - 1 })).filter(f => f.turnsLeft > 0));
+        const nextFlameSquares = flameSquares
+          .map(f => ({ ...f, turnsLeft: f.turnsLeft - 1 }))
+          .filter(f => f.turnsLeft > 0);
+        setFlameSquares(nextFlameSquares);
         setBoard(nextBoard);
         setSelectedPos(null);
         setValidMoves([]);
@@ -767,6 +837,13 @@ export function GameProvider({ children }: { children: ReactNode }) {
         const newCapturedByBlack = turn === 'black' && captured ? [...capturedByBlack, captured] : capturedByBlack;
         const newMoveHistory = movingPiece ? [note, ...moveHistory] : moveHistory;
         setMoveHistory(newMoveHistory);
+        let nextWhiteTime = timesRef.current.whiteTime;
+        let nextBlackTime = timesRef.current.blackTime;
+        if (clockMode !== 'none') {
+          const inc = parseInt(clockMode.split('|')[1], 10) * 1000;
+          if (turn === 'white') { nextWhiteTime += inc; setWhiteTime(nextWhiteTime); }
+          else { nextBlackTime += inc; setBlackTime(nextBlackTime); }
+        }
         const nextTurn = turn === 'white' ? 'black' : 'white';
         const victorColor = checkKingCaptured(nextBoard);
         if (victorColor) {
@@ -774,21 +851,23 @@ export function GameProvider({ children }: { children: ReactNode }) {
           setCrumblingColor(loserColor);
           if (gameMode === 'online') {
             syncState({
-              board: nextBoard, turn: nextTurn, roundStartColor, upgrades, opponentUpgrades,
+              board: nextBoard, turn: nextTurn, roundStartColor, upgrades, opponentUpgrades, clockStarted: true,
               enPassantTarget: nextEnPassantTarget, capturedByWhite: newCapturedByWhite, capturedByBlack: newCapturedByBlack,
               moveHistory: newMoveHistory, playerScore: opponentScore, opponentScore: playerScore, status, roundCounter,
-              roundOver: victorColor,
+              roundOver: victorColor, whiteTime: nextWhiteTime, blackTime: nextBlackTime, flameSquares: nextFlameSquares,
             });
           }
           setTimeout(() => { setCrumblingColor(null); endRound(victorColor); }, 1500);
           return;
         }
         setTurn(nextTurn);
+        if (!clockStarted) setClockStarted(true);
         if (gameMode === 'online') {
           syncState({
-            board: nextBoard, turn: nextTurn, roundStartColor, upgrades, opponentUpgrades,
+            board: nextBoard, turn: nextTurn, roundStartColor, upgrades, opponentUpgrades, clockStarted: true,
             enPassantTarget: nextEnPassantTarget, capturedByWhite: newCapturedByWhite, capturedByBlack: newCapturedByBlack,
             moveHistory: newMoveHistory, playerScore: opponentScore, opponentScore: playerScore, status, roundCounter,
+            whiteTime: nextWhiteTime, blackTime: nextBlackTime, flameSquares: nextFlameSquares,
           });
         }
         return;
@@ -828,6 +907,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
       setEnPassantTarget(nextEnPassantTarget);
       setFlameSquares((prev: any[]) => prev.map(f => ({ ...f, turnsLeft: f.turnsLeft - 1 })).filter(f => f.turnsLeft > 0));
       setBoard(nextBoard);
+      if (clockMode !== 'none') {
+        const inc = parseInt(clockMode.split('|')[1], 10) * 1000;
+        setBlackTime((prev) => prev + inc);
+      }
       const victorColor = checkKingCaptured(nextBoard);
       if (victorColor) {
         const loserColor = victorColor === 'white' ? 'black' : 'white';
@@ -858,7 +941,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
 
   const value: GameContextValue = {
     level, setLevel, matchTarget, setMatchTarget, gameMode, setGameMode,
-    theme, setTheme, aiDifficulty, setAiDifficulty, upgradePriority, setUpgradePriority,
+    theme, setTheme, aiDifficulty, setAiDifficulty, upgradePriority, setUpgradePriority, clockMode, setClockMode,
     mpSocket, setMpSocket, mpColor, setMpColor, mpRoomCode, setMpRoomCode,
     mpOppName, setMpOppName, mpPlayerName, setMpPlayerName,
     board, setBoard, turn, setTurn, selectedPos, setSelectedPos,
@@ -866,6 +949,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     enPassantTarget, setEnPassantTarget, flameSquares, setFlameSquares,
     capturedByWhite, setCapturedByWhite, capturedByBlack, setCapturedByBlack,
     moveHistory, setMoveHistory, crumblingColor, setCrumblingColor,
+    whiteTime, setWhiteTime, blackTime, setBlackTime,
     status, setStatus, playerScore, setPlayerScore, opponentScore, setOpponentScore,
     upgrades, setUpgrades, opponentUpgrades, setOpponentUpgrades,
     roundCounter, setRoundCounter, roundStartColor, setRoundStartColor, isAIThinking,
@@ -878,7 +962,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     handleUpgradeSelect, handleWinnerUpgradeSelect, endRound, handleRemoteState,
     opponentTempDisconnected, setOpponentTempDisconnected, disconnectCountdown,
     setDisconnectCountdown, opponentLeft, setOpponentLeft, rematchProposal, setRematchProposal,
-    rematchDeclined, setRematchDeclined
+    rematchDeclined, setRematchDeclined, isPreloading, setIsPreloading,
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;

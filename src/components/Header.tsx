@@ -3,7 +3,7 @@ import { useGame } from '../GameContext';
 import { getClientId } from '../utils/clientId';
 
 export const Header = () => {
-    const { theme, gameMode, status, setStatus, mpRoomCode, mpSocket, setMpRoomCode, handleRemoteState } = useGame();
+    const { theme, gameMode, status, setStatus, mpRoomCode, mpSocket, setMpRoomCode, handleRemoteState  } = useGame();
     return (
     <header className={`h-16 flex items-center justify-between px-6 border-b-4 font-pixel select-none
       ${theme === 'classic' ? 'bg-black border-zinc-800' : ''}
